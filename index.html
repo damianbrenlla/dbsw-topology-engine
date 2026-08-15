@@ -13,6 +13,39 @@
             display: flex; height: 100vh; overflow: hidden;
             -webkit-font-smoothing: antialiased;
         }
+        
+        /* DBSW Custom Minimalist Scrollbar Palette */
+        #sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+        #sidebar::-webkit-scrollbar-track {
+            background: #ffffff;
+            border-left: 1px solid #e5e5e5;
+        }
+        #sidebar::-webkit-scrollbar-thumb {
+            background: #000000;
+            border-radius: 0px;
+        }
+        #sidebar::-webkit-scrollbar-thumb:hover {
+            background: #333333;
+        }
+        /* Scrollbar Arrow Buttons */
+        #sidebar::-webkit-scrollbar-button:single-button {
+            background-color: #ffffff;
+            display: block;
+            border-style: solid;
+            height: 10px;
+            width: 6px;
+        }
+        #sidebar::-webkit-scrollbar-button:single-button:vertical:decrement {
+            border-width: 0 3px 5px 3px;
+            border-color: transparent transparent #000000 transparent;
+        }
+        #sidebar::-webkit-scrollbar-button:single-button:vertical:increment {
+            border-width: 5px 3px 0 3px;
+            border-color: #000000 transparent transparent transparent;
+        }
+
         #sidebar {
             width: 420px; background: #ffffff; padding: 24px;
             border-right: 1px solid #e5e5e5; display: flex;
@@ -31,7 +64,7 @@
         }
         input:focus, select:focus { border-color: #000000; }
 
-        /* Precise Square Monochrome Checkbox Styling */
+        /* Precise Square Monochrome Checkbox Styling (Fixed Flex-Shrink & Aspect Bounds) */
         input[type="checkbox"] {
             -webkit-appearance: none;
             appearance: none;
@@ -39,14 +72,16 @@
             height: 14px !important;
             min-width: 14px !important;
             min-height: 14px !important;
-            flex-shrink: 0;
+            max-width: 14px !important;
+            max-height: 14px !important;
+            flex-shrink: 0 !important;
             background: #ffffff;
             border: 1px solid #000000;
             border-radius: 0px;
             cursor: pointer;
             outline: none;
             position: relative;
-            margin: 0 4px 0 0;
+            margin: 0 6px 0 0;
             vertical-align: middle;
             display: inline-block;
         }
@@ -121,7 +156,7 @@
         hr { border: 0; border-top: 1px solid #e5e5e5; margin: 2px 0; }
         .section-header { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #000000; }
         .checkbox-group { display: flex; gap: 12px; align-items: center; font-size: 0.78rem; }
-        .checkbox-group label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: #000000; font-weight: 500; }
+        .checkbox-group label { display: flex; align-items: center; cursor: pointer; color: #000000; font-weight: 500; }
         .data-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; margin-top: 4px; }
         .data-table th { text-align: left; background: #f5f5f5; padding: 4px 6px; border: 1px solid #e5e5e5; font-weight: 600; }
         .data-table td { padding: 2px; border: 1px solid #e5e5e5; }
