@@ -51,6 +51,10 @@ class Domain3D:
         self.material_type = mat_lower
         self.material_name = material_name
 
+        # Unit weight, converted from kN/m3 (Eurocode convention) to N/mm3
+        # (1 kN/m3 = 1000 N / 1e9 mm3 = 1e-6 N/mm3), used for the optional
+        # design-dependent self-weight body force. gamma_kn_m3 = 0.0 disables
+        # self-weight entirely.
         self.gamma_kn_m3 = float(gamma_kn_m3)
         self.gamma_n_mm3 = self.gamma_kn_m3 * 1e-6
 
@@ -65,7 +69,7 @@ class Domain3D:
         return np.arange(self.n_nodes).reshape((self.nx + 1, self.ny + 1, self.nz + 1))
 
     def add_support_box(self, x_bounds, y_bounds, z_bounds, dofs="xyz"):
-        """Restrains DOFs for all nodes within specified bounding box [mm]."""
+        """Restrains DOFs and protects surrounding elements as solid passive mask."""
         x_min, x_max = min(x_bounds), max(x_bounds)
         y_min, y_max = min(y_bounds), max(y_bounds)
         z_min, z_max = min(z_bounds), max(z_bounds)
@@ -90,8 +94,13 @@ class Domain3D:
                                 if "z" in dofs:
                                     self.fixed_dofs.append(3 * node + 2)
 
+                                ex = min(ix, self.nx - 1)
+                                ey = min(iy, self.ny - 1)
+                                ez = min(iz, self.nz - 1)
+                                self.passive_mask[ex, ey, ez] = 1.0
+
     def add_point_load(self, coord_xyz, force_xyz):
-        """Applies point force [Fx, Fy, Fz] in N to nearest node."""
+        """Applies point force [Fx, Fy, Fz] in N and protects surrounding elements as solid."""
         px, py, pz = coord_xyz
         ix = int(np.clip(round(px / self.dx), 0, self.nx))
         iy = int(np.clip(round(py / self.dy), 0, self.ny))
@@ -104,11 +113,13 @@ class Domain3D:
         self.F[3 * node + 1] += force_xyz[1]
         self.F[3 * node + 2] += force_xyz[2]
 
-    def add_patch_load(self, x_bounds, y_bounds, z_bounds, total_load_xyz):
-        """Distributes patch load uniformly across all nodes within bounding region.
+        ex = min(ix, self.nx - 1)
+        ey = min(iy, self.ny - 1)
+        ez = min(iz, self.nz - 1)
+        self.passive_mask[ex, ey, ez] = 1.0
 
-        DOES NOT enforce passive_mask=1.0 to preserve the SIMP volume fraction budget.
-        """
+    def add_patch_load(self, x_bounds, y_bounds, z_bounds, total_load_xyz):
+        """Distributes patch load uniformly across all nodes within bounding region."""
         x_min, x_max = min(x_bounds), max(x_bounds)
         y_min, y_max = min(y_bounds), max(y_bounds)
         z_min, z_max = min(z_bounds), max(z_bounds)
@@ -126,11 +137,16 @@ class Domain3D:
                         for iz in range(self.nz + 1):
                             pz = iz * self.dz
                             if z_min - eps <= pz <= z_max + eps:
-                                target_nodes.append(nodenrs[ix, iy, iz])
+                                target_nodes.append((ix, iy, iz, nodenrs[ix, iy, iz]))
 
         if len(target_nodes) > 0:
             load_per_node = np.array(total_load_xyz) / len(target_nodes)
-            for node in target_nodes:
+            for ix, iy, iz, node in target_nodes:
                 self.F[3 * node] += load_per_node[0]
                 self.F[3 * node + 1] += load_per_node[1]
                 self.F[3 * node + 2] += load_per_node[2]
+
+                ex = min(ix, self.nx - 1)
+                ey = min(iy, self.ny - 1)
+                ez = min(iz, self.nz - 1)
+                self.passive_mask[ex, ey, ez] = 1.0
