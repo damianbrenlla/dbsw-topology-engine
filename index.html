@@ -31,6 +31,38 @@
         }
         input:focus, select:focus { border-color: #000000; }
 
+        /* Dark Monochrome Checkbox Styling (Eliminates Browser Default Blue Fill) */
+        input[type="checkbox"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #ffffff;
+            border: 1px solid #000000;
+            border-radius: 0px;
+            cursor: pointer;
+            outline: none;
+            position: relative;
+            margin: 0;
+            vertical-align: middle;
+            accent-color: #000000;
+        }
+        input[type="checkbox"]:checked {
+            background: #000000;
+            border-color: #000000;
+        }
+        input[type="checkbox"]:checked::after {
+            content: '';
+            position: absolute;
+            left: 4px;
+            top: 1px;
+            width: 3px;
+            height: 7px;
+            border: solid #ffffff;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+        }
+
         input[type="range"] {
             -webkit-appearance: none;
             width: 100%;
@@ -86,7 +118,7 @@
         hr { border: 0; border-top: 1px solid #e5e5e5; margin: 2px 0; }
         .section-header { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #000000; }
         .checkbox-group { display: flex; gap: 12px; align-items: center; font-size: 0.78rem; }
-        .checkbox-group label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+        .checkbox-group label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: #000000; font-weight: 500; }
         .data-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; margin-top: 4px; }
         .data-table th { text-align: left; background: #f5f5f5; padding: 4px 6px; border: 1px solid #e5e5e5; font-weight: 600; }
         .data-table td { padding: 2px; border: 1px solid #e5e5e5; }
@@ -284,7 +316,7 @@
             <input type="number" id="iterations" value="20" style="width: 50%;">
         </div>
     </div>
-    <div class="checkbox-group" style="margin-top: 2px;">
+    <div class="checkbox-group" style="margin-top: 4px;">
         <label><input type="checkbox" id="self_weight_toggle" checked> Include Self-Weight (Dead Load)</label>
     </div>
 
@@ -340,7 +372,7 @@
     var scene, camera, renderer, controls, mesh;
     var domainBox, supportBoxVisual;
     var forceArrows = [];
-    var supportSpheres = [];
+    var supportGizmos = [];
     var currentVertices = [], currentFaces = [], currentStressesMPa = [], currentDeflectionsMM = [];
     var currentSigmaMaxAbs = 1.0, currentSigmaMaxTens = 1.0, currentSigmaMaxComp = -1.0;
     var currentUMax = 1.0, currentFk = 355.0;
@@ -600,6 +632,7 @@
         return supports;
     }
 
+    /* Graphical Rendering of Pin (Left / Emerald Green) & Roller (Right / Coral Red) Supports + Load Arrows */
     function updateDomainVisuals() {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -612,8 +645,37 @@
         domainBox.position.set(Lx / 2.0, Lz / 2.0, Ly / 2.0);
         scene.add(domainBox);
 
+        // Clear existing gizmos
+        supportGizmos.forEach(function(g) { scene.remove(g); });
+        supportGizmos = [];
+
+        var size = Math.max(120, Lz * 0.22);
+        var supMode = document.getElementById('support_mode').value;
+
+        if (supMode === 'preset') {
+            var preset = document.getElementById('support_preset').value;
+            if (preset === 'simply_supported') {
+                // Pin Support Left (Pyramid - Emerald Green)
+                var pinGeo = new THREE.ConeGeometry(size, size * 1.2, 4);
+                var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 });
+                var pinMesh = new THREE.Mesh(pinGeo, pinMat);
+                pinMesh.position.set(0, -size * 0.5, Ly / 2.0);
+                scene.add(pinMesh);
+                supportGizmos.push(pinMesh);
+
+                // Roller Support Right (Cylinder - Coral Red)
+                var rollerGeo = new THREE.CylinderGeometry(size * 0.35, size * 0.35, Ly, 16);
+                var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 });
+                var rollerMesh = new THREE.Mesh(rollerGeo, rollerMat);
+                rollerMesh.rotation.x = Math.PI / 2;
+                rollerMesh.position.set(Lx, -size * 0.35, Ly / 2.0);
+                scene.add(rollerMesh);
+                supportGizmos.push(rollerMesh);
+            }
+        }
+
         if (supportBoxVisual) scene.remove(supportBoxVisual);
-        if (document.getElementById('support_mode').value === 'custom') {
+        if (supMode === 'custom') {
             var xMin = parseFloat(document.getElementById('sup_x_min').value) || 0;
             var xMax = parseFloat(document.getElementById('sup_x_max').value) || 0;
             var yMin = parseFloat(document.getElementById('sup_y_min').value) || 0;
@@ -628,16 +690,14 @@
             scene.add(supportBoxVisual);
         }
 
-        supportSpheres.forEach(function(s) { scene.remove(s); });
-        supportSpheres = [];
         var pointSups = getPointSupportArrayData();
-        var sphereGeo = new THREE.SphereGeometry(18, 16, 16);
+        var sphereGeo = new THREE.SphereGeometry(size * 0.25, 16, 16);
         var sphereMat = new THREE.MeshStandardMaterial({ color: 0x0000ff });
         pointSups.forEach(function(ps) {
             var sphere = new THREE.Mesh(sphereGeo, sphereMat);
             sphere.position.set(ps.x, ps.z, ps.y);
             scene.add(sphere);
-            supportSpheres.push(sphere);
+            supportGizmos.push(sphere);
         });
 
         forceArrows.forEach(function(a) { scene.remove(a); });
@@ -655,8 +715,6 @@
             }
         });
     }
-
-    // ---- WASM ENGINE WIRING (replaces Flask fetch/poll logic) ----
 
     function initWasmEngine() {
         worker = new Worker('solver_worker.js?cb=' + Date.now());
@@ -777,8 +835,6 @@
     }
 
     function stopOptimisation() {
-        // Pyodide has no clean mid-computation cancellation from the host page,
-        // so "stop" terminates the worker outright and boots a fresh one.
         var status = document.getElementById('status');
         status.style.color = "#cc0000";
         status.style.borderLeftColor = "#cc0000";
