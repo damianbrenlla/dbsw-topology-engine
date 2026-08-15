@@ -33,7 +33,7 @@
             background-color: #ffffff;
             display: block;
             border-style: solid;
-            height: 100px;
+            height: 10px;
             width: 6px;
         }
         #sidebar::-webkit-scrollbar-button:single-button:vertical:decrement {
@@ -665,13 +665,13 @@
                 x: parseFloat(r.querySelector('.sp-x').value) || 0,
                 y: parseFloat(r.querySelector('.sp-y').value) || 0,
                 z: parseFloat(r.querySelector('.sp-z').value) || 0,
-                dofs: r.querySelector('.sp-dofs').value || 'xyz'
+                dofs: (r.querySelector('.sp-dofs').value || 'xyz').toLowerCase()
             });
         });
         return supports;
     }
 
-    /* Universal 3D Support Visualiser (Presets & Custom Bounding Boxes) */
+    /* Universal 3D Support Visualiser (Presets, Custom Bounding Boxes & Point Support Table) */
     function updateDomainVisuals() {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -691,10 +691,11 @@
         var size = Math.max(120, Lz * 0.22);
         var supMode = document.getElementById('support_mode').value;
 
-        // Shared Materials for Universal Support Primitives
-        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 }); // Emerald Green (Fixed XYZ)
+        // Shared Materials for Kinematic Primitives
+        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 }); // Emerald Green (Fixed/Pin XYZ)
         var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 }); // Coral Red (Roller YZ)
 
+        // --- 1. Preset Supports Rendering ---
         if (supMode === 'preset') {
             var preset = document.getElementById('support_preset').value;
             
@@ -725,9 +726,7 @@
             } else if (preset === 'four_corners') {
                 // Four Corner Pyramids at Z = 0
                 var cornerGeo = new THREE.ConeGeometry(size * 0.8, size, 4);
-                var corners = [
-                    [0, 0], [Lx, 0], [0, Ly], [Lx, Ly]
-                ];
+                var corners = [[0, 0], [Lx, 0], [0, Ly], [Lx, Ly]];
                 corners.forEach(function(pt) {
                     var cMesh = new THREE.Mesh(cornerGeo, pinMat);
                     cMesh.position.set(pt[0], -size * 0.4, pt[1]);
@@ -737,6 +736,7 @@
             }
         }
 
+        // --- 2. Custom Bounding Box Supports Rendering ---
         if (supportBoxVisual) scene.remove(supportBoxVisual);
         if (supMode === 'custom') {
             var xMin = parseFloat(document.getElementById('sup_x_min').value) || 0;
@@ -754,17 +754,31 @@
             supportGizmos.push(supMesh);
         }
 
-        // Render Point Supports Table Entries
+        // --- 3. Discrete Point Supports Table Entries (Pin Cones / Roller Cylinders) ---
         var pointSups = getPointSupportArrayData();
-        var sphereGeo = new THREE.SphereGeometry(size * 0.3, 16, 16);
+        var ptPinGeo = new THREE.ConeGeometry(size * 0.6, size * 0.8, 4);
+        var ptRollerGeo = new THREE.CylinderGeometry(size * 0.25, size * 0.25, size * 0.8, 16);
+
         pointSups.forEach(function(ps) {
-            var sphere = new THREE.Mesh(sphereGeo, pinMat);
-            sphere.position.set(ps.x, ps.z, ps.y);
-            scene.add(sphere);
-            supportGizmos.push(sphere);
+            var isPin = ps.dofs.includes('x') && ps.dofs.includes('y') && ps.dofs.includes('z');
+            var ptMesh;
+
+            if (isPin) {
+                // Full 3-DOF Restraint: Emerald Green Pyramid pointing to node
+                ptMesh = new THREE.Mesh(ptPinGeo, pinMat);
+                ptMesh.position.set(ps.x, ps.z - size * 0.4, ps.y);
+            } else {
+                // Partial/Roller Restraint: Coral Red Transverse Cylinder
+                ptMesh = new THREE.Mesh(ptRollerGeo, rollerMat);
+                ptMesh.rotation.x = Math.PI / 2;
+                ptMesh.position.set(ps.x, ps.z - size * 0.25, ps.y);
+            }
+
+            scene.add(ptMesh);
+            supportGizmos.push(ptMesh);
         });
 
-        // Render Load Vectors
+        // --- 4. Render Point Load Vectors ---
         forceArrows.forEach(function(a) { scene.remove(a); });
         forceArrows = [];
         getLoadArrayData().forEach(function(ld) {
