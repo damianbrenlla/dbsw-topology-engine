@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DBSW — 3D Wasm Topology Engine</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; font-family: "Helvetica Neue", Arial, sans-serif; background: #fff; color: #000; display: flex; height: 100vh; overflow: hidden; }
+        #sidebar { width: 420px; background: #fff; padding: 24px; border-right: 1px solid #e5e5e5; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; z-index: 10; }
+        #viewport { flex: 1; position: relative; background: #fff; }
+        h2 { margin: 0; font-size: 0.95rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; }
+        .subtitle { font-size: 0.72rem; color: #666; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
+        .control-group { display: flex; flex-direction: column; gap: 4px; }
+        label { font-size: 0.75rem; color: #444; font-weight: 500; }
+        input, select { background: #fff; border: 1px solid #ccc; color: #000; padding: 6px 8px; font-size: 0.78rem; outline: none; accent-color: #000; }
+        input:focus, select:focus { border-color: #000; }
+        .btn-primary { background: #000; color: #fff; border: 1px solid #000; padding: 12px; font-size: 0.82rem; font-weight: 600; text-transform: uppercase; cursor: pointer; }
+        .btn-primary:hover { background: #333; }
+        .btn-secondary { background: #fff; color: #000; border: 1px solid #000; padding: 8px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; cursor: pointer; }
+        #status { font-size: 0.78rem; color: #000; padding: 8px; background: #f9f9f9; border-left: 2px solid #000; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+<div id="sidebar">
+    <div>
+        <h2>DBSW</h2>
+        <div class="subtitle">3D Wasm Topology Engine (Client-Side)</div>
+    </div>
+
+    <div class="control-group">
+        <label>Material Classification</label>
+        <select id="mat_type">
+            <option value="steel">Structural Steel — EC3</option>
+            <option value="concrete">Reinforced Concrete — EC2</option>
+            <option value="timber">Timber / Glulam — EC5</option>
+        </select>
+    </div>
+
+    <div class="control-group">
+        <label>Domain Dimensions Lx, Ly, Lz (mm)</label>
+        <div style="display: flex; gap: 6px;">
+            <input type="number" id="Lx" value="6000" style="width:33%;">
+            <input type="number" id="Ly" value="300" style="width:33%;">
+            <input type="number" id="Lz" value="600" style="width:33%;">
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label>FE Divisions nx, ny, nz</label>
+        <div style="display: flex; gap: 6px;">
+            <input type="number" id="nx" value="36" style="width:33%;">
+            <input type="number" id="ny" value="9" style="width:33%;">
+            <input type="number" id="nz" value="12" style="width:33%;">
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label>Volume Fraction & Iterations</label>
+        <div style="display: flex; gap: 6px;">
+            <input type="number" step="0.05" id="volfrac" value="0.20" style="width:50%;">
+            <input type="number" id="iterations" value="30" style="width:50%;">
+        </div>
+    </div>
+
+    <button id="btn-exec" class="btn-primary" onclick="startSolve()">Execute Optimisation</button>
+    <button class="btn-secondary" onclick="exportSTL()">Export .STL Mesh</button>
+
+    <div id="status">Initializing WebAssembly engine...</div>
+</div>
+
+<div id="viewport"></div>
+
+<script>
+    let worker = new Worker('solver_worker.js');
+    let scene, camera, renderer, controls, mesh;
+    let currentVertices = [], currentFaces = [];
+
+    worker.onmessage = function(e) {
+        const data = e.data;
+        const statusDiv = document.getElementById('status');
+
+        if (data.status === 'log') {
+            statusDiv.innerText = data.message;
+        } else if (data.status === 'ready') {
+            statusDiv.innerText = "Pyodide Wasm Engine Ready. Define parameters and execute.";
+            document.getElementById('btn-exec').disabled = false;
+        } else if (data.status === 'running') {
+            statusDiv.innerText = `Solving FE system in browser Wasm runtime...`;
+        } else if (data.status === 'completed') {
+            statusDiv.innerText = "Optimisation complete. Rendering geometry...";
+            currentVertices = data.data.vertices;
+            currentFaces = data.data.faces;
+            renderMesh();
+        } else if (data.status === 'error') {
+            statusDiv.innerText = `Error: ${data.message}`;
+            statusDiv.style.borderLeftColor = "#cc0000";
+        }
+    };
+
+    function initEngine() {
+        worker.postMessage({ action: 'init' });
+        initThree();
+    }
+
+    function startSolve() {
+        const payload = {
+            material_type: document.getElementById('mat_type').value,
+            material_grade: 'S355',
+            Lx: parseFloat(document.getElementById('Lx').value),
+            Ly: parseFloat(document.getElementById('Ly').value),
+            Lz: parseFloat(document.getElementById('Lz').value),
+            nx: parseInt(document.getElementById('nx').value),
+            ny: parseInt(document.getElementById('ny').value),
+            nz: parseInt(document.getElementById('nz').value),
+            volfrac: parseFloat(document.getElementById('volfrac').value),
+            iterations: parseInt(document.getElementById('iterations').value),
+            loads: [{ x: 3000, y: 150, z: 600, Fx: 0, Fy: 0, Fz: -100 }]
+        };
+        worker.postMessage({ action: 'solve', payload: payload });
+    }
+
+    function initThree() {
+        const container = document.getElementById('viewport');
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 100000);
+        camera.position.set(7000, 3000, 4000);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.appendChild(renderer.domElement);
+
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        dirLight.position.set(5000, 8000, 4000);
+        scene.add(dirLight);
+
+        animate();
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+    }
+
+    function renderMesh() {
+        if (mesh) scene.remove(mesh);
+        const geometry = new THREE.BufferGeometry();
+        const positions = [];
+
+        currentFaces.forEach(f => {
+            const p1 = currentVertices[f[0]], p2 = currentVertices[f[1]], p3 = currentVertices[f[2]];
+            positions.push(p1[0], p1[2], p1[1]);
+            positions.push(p2[0], p2[2], p2[1]);
+            positions.push(p3[0], p3[2], p3[1]);
+        });
+
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.computeVertexNormals();
+
+        const material = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.4, side: THREE.DoubleSide });
+        mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+    }
+
+    function exportSTL() {
+        if (!currentVertices.length) return alert("No geometry available.");
+        let stl = "solid DBSW_Optimised_Mesh\n";
+        currentFaces.forEach(f => {
+            const p1 = currentVertices[f[0]], p2 = currentVertices[f[1]], p3 = currentVertices[f[2]];
+            stl += `  facet normal 0 0 1\n    outer loop\n`;
+            stl += `      vertex ${p1[0]} ${p1[1]} ${p1[2]}\n`;
+            stl += `      vertex ${p2[0]} ${p2[1]} ${p2[2]}\n`;
+            stl += `      vertex ${p3[0]} ${p3[1]} ${p3[2]}\n`;
+            stl += `    endloop\n  endfacet\n`;
+        });
+        stl += "endsolid DBSW_Optimised_Mesh\n";
+        const blob = new Blob([stl], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'DBSW_Topology_Mesh.stl';
+        a.click();
+    }
+
+    window.onload = initEngine;
+</script>
+</body>
+</html>
