@@ -277,9 +277,8 @@
     <div id="preset_supports_div" class="control-group">
         <label>Support Presets</label>
         <select id="support_preset" onchange="updateDomainVisuals()">
-            <option value="simply_supported">Simply Supported Ends (X = 0 & X = Lx)</option>
             <option value="cantilever">Cantilever Wall (X = 0 mm, Fixed Face)</option>
-            <option value="four_corners">Four Corner Columns (Bottom Z = 0)</option>
+            <option value="four_corners">Four Corners</option>
         </select>
     </div>
 
@@ -553,6 +552,14 @@
 
         window.addEventListener('resize', onWindowResize);
         updateMaterialUI();
+        
+        // Add two default pin/roller supports to Discrete Table for initial simple span baseline
+        var tbody = document.getElementById('support_table_body');
+        if (tbody && tbody.children.length === 0) {
+            addSupportRow(0, 150, 0, 'xyz');
+            addSupportRow(6000, 150, 0, 'yz');
+        }
+
         applyLoadPreset();
         setupCutPlaneSliders();
         animate();
@@ -702,23 +709,7 @@
         if (supMode === 'preset') {
             var preset = document.getElementById('support_preset').value;
             
-            if (preset === 'simply_supported') {
-                // Pin Support Left (Pyramid at X=0)
-                var pinGeo = new THREE.ConeGeometry(size, size * 1.2, 4);
-                var pinMesh = new THREE.Mesh(pinGeo, pinMat);
-                pinMesh.position.set(0, -size * 0.5, Ly / 2.0);
-                scene.add(pinMesh);
-                supportGizmos.push(pinMesh);
-
-                // Roller Support Right (Cylinder at X=Lx)
-                var rollerGeo = new THREE.CylinderGeometry(size * 0.35, size * 0.35, Ly, 16);
-                var rollerMesh = new THREE.Mesh(rollerGeo, rollerMat);
-                rollerMesh.rotation.x = Math.PI / 2;
-                rollerMesh.position.set(Lx, -size * 0.35, Ly / 2.0);
-                scene.add(rollerMesh);
-                supportGizmos.push(rollerMesh);
-
-            } else if (preset === 'cantilever') {
+            if (preset === 'cantilever') {
                 // Fixed Cantilever Wall Face (X = 0 mm)
                 var wallGeo = new THREE.BoxGeometry(size * 0.4, Lz, Ly);
                 var wallMesh = new THREE.Mesh(wallGeo, pinMat);
@@ -987,11 +978,9 @@
         var colorScaleSignedAsymmetric = function(val, maxTens, minComp) {
             var h;
             if (val >= 0) {
-                // Tensile Range [0, maxTens] -> Maps to Green-Yellow-Red (120° to 0°)
                 var normTens = (maxTens > 1e-6) ? Math.min(val / maxTens, 1.0) : 0.0;
                 h = (1.0 - normTens) * 120.0 / 360.0;
             } else {
-                // Compressive Range [minComp, 0] -> Maps to Green-Cyan-Blue (120° to 240°)
                 var normComp = (Math.abs(minComp) > 1e-6) ? Math.min(Math.abs(val / minComp), 1.0) : 0.0;
                 h = (120.0 + normComp * 120.0) / 360.0;
             }
