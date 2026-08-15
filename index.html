@@ -413,7 +413,10 @@
     var forceArrows = [];
     var supportGizmos = [];
     var currentVertices = [], currentFaces = [], currentStressesMPa = [], currentDeflectionsMM = [];
-    var currentSigmaMaxAbs = 1.0, currentSigmaMaxTens = 1.0, currentSigmaMaxComp = -1.0;
+    
+    // Explicit Asymmetric Stress Bounds Tracking
+    var currentSigmaMaxTens = 1.0;  // Maximum Tensile Stress (+MPa)
+    var currentSigmaMaxComp = -1.0; // Maximum Compressive Stress (-MPa, negative)
     var currentUMax = 1.0, currentFk = 30.0;
     var worker = null;
     var engineReady = false;
@@ -839,9 +842,10 @@
             currentFaces = data.data.faces;
             currentStressesMPa = data.data.stresses_mpa;
             currentDeflectionsMM = data.data.deflections_mm || [];
-            currentSigmaMaxAbs = data.data.sigma_max_abs;
-            currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_tens : data.data.sigma_max_abs;
-            currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : -data.data.sigma_max_abs;
+            
+            // Exact Asymmetric Peak Extraction
+            currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_tens : Math.max(0.0, ...currentStressesMPa);
+            currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : Math.min(0.0, ...currentStressesMPa);
             currentUMax = data.data.u_max;
             currentFk = data.data.f_k || 30.0;
 
@@ -940,22 +944,23 @@
         return val.toFixed(2) + " mm";
     }
 
-    function updateLegendLabels(scaleMax, isDeflectionMode) {
+    /* Asymmetric Legend Label Mapping */
+    function updateLegendLabels(isDeflectionMode) {
         var legendTitle = document.getElementById('legend-title');
         if (isDeflectionMode) {
             legendTitle.innerText = "Displacement Map (mm)";
-            document.getElementById('lbl-100').innerText = formatMM(scaleMax) + " (Max Uz)";
-            document.getElementById('lbl-075').innerText = formatMM(scaleMax * 0.75);
-            document.getElementById('lbl-050').innerText = formatMM(scaleMax * 0.50);
-            document.getElementById('lbl-025').innerText = formatMM(scaleMax * 0.25);
+            document.getElementById('lbl-100').innerText = formatMM(currentUMax) + " (Max Uz)";
+            document.getElementById('lbl-075').innerText = formatMM(currentUMax * 0.75);
+            document.getElementById('lbl-050').innerText = formatMM(currentUMax * 0.50);
+            document.getElementById('lbl-025').innerText = formatMM(currentUMax * 0.25);
             document.getElementById('lbl-000').innerText = "0.00 mm";
         } else {
             legendTitle.innerText = "Stress Map (MPa)";
-            document.getElementById('lbl-100').innerText = "+" + formatMPa(scaleMax) + " (Tension)";
-            document.getElementById('lbl-075').innerText = "+" + formatMPa(scaleMax * 0.50);
-            document.getElementById('lbl-050').innerText = "0.0 MPa (Neutral)";
-            document.getElementById('lbl-025').innerText = "-" + formatMPa(scaleMax * 0.50);
-            document.getElementById('lbl-000').innerText = "-" + formatMPa(scaleMax) + " (Compression)";
+            document.getElementById('lbl-100').innerText = "+" + formatMPa(currentSigmaMaxTens) + " (Max Tens)";
+            document.getElementById('lbl-075').innerText = "+" + formatMPa(currentSigmaMaxTens * 0.50);
+            document.getElementById('lbl-050').innerText = "0.0 MPa (Neutral Axis)";
+            document.getElementById('lbl-025').innerText = formatMPa(currentSigmaMaxComp * 0.50);
+            document.getElementById('lbl-000').innerText = formatMPa(currentSigmaMaxComp) + " (Max Comp)";
         }
     }
 
@@ -963,11 +968,9 @@
         var legend = document.getElementById('legend');
         var mode = document.getElementById('render_mode').value;
         var isDeflectionMode = (mode === 'deflection');
-        var scaleMax = isDeflectionMode ? currentUMax : currentSigmaMaxAbs;
-        if (scaleMax <= 0) scaleMax = 1.0;
 
         if (mode === 'ec3_stress' || mode === 'deflection') {
-            updateLegendLabels(scaleMax, isDeflectionMode);
+            updateLegendLabels(isDeflectionMode);
             legend.style.display = 'flex';
         } else {
             legend.style.display = 'none';
@@ -980,16 +983,29 @@
         var positions = [];
         var colors = [];
 
-        var colorScaleSigned = function(val, maxVal) {
-            var norm = Math.min(Math.max(val / maxVal, -1.0), 1.0);
-            var ratio = (norm + 1.0) / 2.0;
-            var h = (1.0 - ratio) * 240 / 360;
-            var c = new THREE.Color(); c.setHSL(h, 0.85, 0.45); return c;
+        /* Asymmetric Piecewise HSL Color Scaler Centered at Neutral Axis (0.0 MPa) */
+        var colorScaleSignedAsymmetric = function(val, maxTens, minComp) {
+            var h;
+            if (val >= 0) {
+                // Tensile Range [0, maxTens] -> Maps to Green-Yellow-Red (120° to 0°)
+                var normTens = (maxTens > 1e-6) ? Math.min(val / maxTens, 1.0) : 0.0;
+                h = (1.0 - normTens) * 120.0 / 360.0;
+            } else {
+                // Compressive Range [minComp, 0] -> Maps to Green-Cyan-Blue (120° to 240°)
+                var normComp = (Math.abs(minComp) > 1e-6) ? Math.min(Math.abs(val / minComp), 1.0) : 0.0;
+                h = (120.0 + normComp * 120.0) / 360.0;
+            }
+            var c = new THREE.Color(); 
+            c.setHSL(h, 0.85, 0.45); 
+            return c;
         };
+
         var colorScaleUnsigned = function(val, maxVal) {
             var norm = Math.min(Math.max(val / maxVal, 0.0), 1.0);
-            var h = (1.0 - norm) * 240 / 360;
-            var c = new THREE.Color(); c.setHSL(h, 0.85, 0.45); return c;
+            var h = (1.0 - norm) * 240.0 / 360.0;
+            var c = new THREE.Color(); 
+            c.setHSL(h, 0.85, 0.45); 
+            return c;
         };
 
         var activeFieldArray = isDeflectionMode ? currentDeflectionsMM : currentStressesMPa;
@@ -1003,9 +1019,21 @@
 
             if (hasFieldData && (mode === 'ec3_stress' || mode === 'deflection')) {
                 var s1 = activeFieldArray[f[0]] || 0.0, s2 = activeFieldArray[f[1]] || 0.0, s3 = activeFieldArray[f[2]] || 0.0;
-                var scaleFn = isDeflectionMode ? colorScaleUnsigned : colorScaleSigned;
-                var c1 = scaleFn(s1, scaleMax), c2 = scaleFn(s2, scaleMax), c3 = scaleFn(s3, scaleMax);
-                colors.push(c1.r, c1.g, c1.b); colors.push(c2.r, c2.g, c2.b); colors.push(c3.r, c3.g, c3.b);
+                var c1, c2, c3;
+                
+                if (isDeflectionMode) {
+                    c1 = colorScaleUnsigned(s1, currentUMax);
+                    c2 = colorScaleUnsigned(s2, currentUMax);
+                    c3 = colorScaleUnsigned(s3, currentUMax);
+                } else {
+                    c1 = colorScaleSignedAsymmetric(s1, currentSigmaMaxTens, currentSigmaMaxComp);
+                    c2 = colorScaleSignedAsymmetric(s2, currentSigmaMaxTens, currentSigmaMaxComp);
+                    c3 = colorScaleSignedAsymmetric(s3, currentSigmaMaxTens, currentSigmaMaxComp);
+                }
+                
+                colors.push(c1.r, c1.g, c1.b); 
+                colors.push(c2.r, c2.g, c2.b); 
+                colors.push(c3.r, c3.g, c3.b);
             }
         });
 
