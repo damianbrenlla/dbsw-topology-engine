@@ -1,338 +1,125 @@
-# DBSW 3D SIMP Topology Engine — Core Numerics
-# Author: Damian Brenlla / DBSW 2026
+"""
+DBSW R260003 Topology Optimiser - 3D SIMP Solver Engine
+Sparse FE assembly, compliance minimisation, and Marching Cubes isosurface extraction.
+"""
 
 import numpy as np
-from scipy.signal import fftconvolve
-import scipy.sparse as sp
-from scipy.sparse.linalg import cg, spsolve
-from core.domain import Domain3D
+from scipy.sparse import csc_matrix
+from scipy.sparse.linalg import spsolve
+from skimage.measure import marching_cubes
+from .domain import Domain3D
+from .materials import get_material
 
 
-class TopologyOptimiser3DCompliance:
-    """Deterministic 3D Hex8 SIMP Engine for Linear-Elastic Compliance Minimization
+def hex8_stiffness_matrix(E: float, nu: float, dx: float, dy: float, dz: float) -> np.ndarray:
+    """Precomputes 24x24 element stiffness matrix for a 3D Hex8 continuum element."""
+    C = np.zeros((6, 6))
+    factor = E / ((1 + nu) * (1 - 2 * nu))
+    C[0, 0] = C[1, 1] = C[2, 2] = factor * (1 - nu)
+    C[0, 1] = C[0, 2] = C[1, 0] = C[1, 2] = C[2, 0] = C[2, 1] = factor * nu
+    C[3, 3] = C[4, 4] = C[5, 5] = factor * (1 - 2 * nu) / 2.0
 
-    Features:
-      - Symmetric Isoparametric Integration Centered at Element Midpoints
-      - Exact Cauchy Stress Sign Alignment (+Tension Top, -Compression Bottom)
-      - Verified CG Solver Convergence with Direct-Solve Fallback
-      - Physical (mm-based) Distance Filter Kernel
-      - Sigmund (2007) Density-Weighted Sensitivity Filtering
-    """
+    gp = [-1 / np.sqrt(3), 1 / np.sqrt(3)]
+    Ke = np.zeros((24, 24))
 
-    def __init__(
-        self,
-        domain: Domain3D,
-        volfrac: float = 0.3,
-        penal_k: float = 3.0,
-        rmin_mm: float = 150.0,
-        notension_weight: float = 3.0,
-    ):
-        self.domain = domain
-        self.volfrac = volfrac
-        self.penal_k = penal_k
-        self.rmin_mm = rmin_mm
-        self.notension_weight = notension_weight
+    for xi in gp:
+        for eta in gp:
+            for zeta in gp:
+                dN_dxi = 0.125 * np.array([
+                    [-(1-eta)*(1-zeta),  (1-eta)*(1-zeta),  (1+eta)*(1-zeta), -(1+eta)*(1-zeta),
+                     -(1-eta)*(1+zeta),  (1-eta)*(1+zeta),  (1+eta)*(1+zeta), -(1+eta)*(1+zeta)],
+                    [-(1-xi)*(1-zeta),  -(1+xi)*(1-zeta),   (1+xi)*(1-zeta),   (1-xi)*(1-zeta),
+                     -(1-xi)*(1+zeta),  -(1+xi)*(1+zeta),   (1+xi)*(1+zeta),   (1-xi)*(1+zeta)],
+                    [-(1-xi)*(1-eta),   -(1+xi)*(1-eta),   -(1+xi)*(1+eta),   -(1-xi)*(1+eta),
+                      (1-xi)*(1-eta),    (1+xi)*(1-eta),    (1+xi)*(1+eta),    (1-xi)*(1+eta)]
+                ])
 
-        self.Emax = float(domain.E0)  # MPa
-        self.Emin = 1e-9 * self.Emax
-        self.f_yd = float(domain.f_d)  # Design strength (MPa)
+                J = dN_dxi @ np.array([
+                    [0, 0, 0], [dx, 0, 0], [dx, dy, 0], [0, dy, 0],
+                    [0, 0, dz], [dx, 0, dz], [dx, dy, dz], [0, dy, dz]
+                ])
 
-        self.x = np.full((domain.nx, domain.ny, domain.nz), volfrac)
+                detJ = np.linalg.det(J)
+                invJ = np.linalg.inv(J)
+                dN_dx = invJ @ dN_dxi
 
-        solid_mask = domain.passive_mask == 1.0
-        void_mask = domain.passive_mask == 0.0
-        self.x[solid_mask] = 1.0
-        self.x[void_mask] = 0.001
+                B = np.zeros((6, 24))
+                for i in range(8):
+                    B[0, 3*i]   = dN_dx[0, i]
+                    B[1, 3*i+1] = dN_dx[1, i]
+                    B[2, 3*i+2] = dN_dx[2, i]
+                    B[3, 3*i]   = dN_dx[1, i]; B[3, 3*i+1] = dN_dx[0, i]
+                    B[4, 3*i+1] = dN_dx[2, i]; B[4, 3*i+2] = dN_dx[1, i]
+                    B[5, 3*i]   = dN_dx[2, i]; B[5, 3*i+2] = dN_dx[0, i]
 
-        self.D_mat = self._build_constitutive_matrix()
-        self.KE = self._build_element_stiffness()
+                Ke += B.T @ C @ B * detJ
 
-        self._precompute_indexing()
-        self._precompute_filter_kernel()
+    return Ke
 
-    def _build_constitutive_matrix(self):
-        """6x6 physical isotropic elasticity tensor D in MPa."""
-        E = self.Emax
-        nu = self.domain.nu
-        c = E / ((1.0 + nu) * (1.0 - 2.0 * nu))
-        D = c * np.array([
-            [1 - nu, nu, nu, 0, 0, 0],
-            [nu, 1 - nu, nu, 0, 0, 0],
-            [nu, nu, 1 - nu, 0, 0, 0],
-            [0, 0, 0, (1.0 - 2.0 * nu) / 2, 0, 0],
-            [0, 0, 0, 0, (1.0 - 2.0 * nu) / 2, 0],
-            [0, 0, 0, 0, 0, (1.0 - 2.0 * nu) / 2],
-        ])
-        return D
 
-    def _get_shape_derivatives(self, xi, eta, zeta):
-        """8x3 shape function derivatives dN/d(xi,eta,zeta) for standard Hex8."""
-        return 0.125 * np.array([
-            [-(1 - eta) * (1 - zeta), -(1 - xi) * (1 - zeta), -(1 - xi) * (1 - eta)],
-            [(1 - eta) * (1 - zeta), -(1 + xi) * (1 - zeta), -(1 + xi) * (1 - eta)],
-            [(1 + eta) * (1 - zeta), (1 + xi) * (1 - zeta), -(1 + xi) * (1 + eta)],
-            [-(1 + eta) * (1 - zeta), (1 - xi) * (1 - zeta), -(1 - xi) * (1 + eta)],
-            [-(1 - eta) * (1 + zeta), -(1 - xi) * (1 + zeta), (1 - xi) * (1 - eta)],
-            [(1 - eta) * (1 + zeta), -(1 + xi) * (1 + zeta), (1 + xi) * (1 - eta)],
-            [(1 + eta) * (1 + zeta), (1 + xi) * (1 + zeta), (1 + xi) * (1 + eta)],
-            [-(1 + eta) * (1 + zeta), (1 - xi) * (1 + zeta), (1 - xi) * (1 + eta)],
-        ])
+def run_simp_optimisation(
+    nelx: int, nely: int, nelz: int,
+    lx: float, ly: float, lz: float,
+    volfrac: float, max_iter: int,
+    mat_key: str, penal: float = 3.0
+):
+    """Executes 3D SIMP topology optimization loop."""
+    domain = Domain3D(nelx, nely, nelz, lx, ly, lz)
+    mat = get_material(mat_key)
 
-    def _build_element_stiffness(self):
-        """Integrates 24x24 element stiffness KE (N/mm) using 2x2x2 Gauss quadrature."""
-        dx, dy, dz = self.domain.dx, self.domain.dy, self.domain.dz
-        # Symmetric node coordinates centered at midpoints
-        node_coords = np.array([
-            [-0.5 * dx, -0.5 * dy, -0.5 * dz],
-            [0.5 * dx, -0.5 * dy, -0.5 * dz],
-            [0.5 * dx, 0.5 * dy, -0.5 * dz],
-            [-0.5 * dx, 0.5 * dy, -0.5 * dz],
-            [-0.5 * dx, -0.5 * dy, 0.5 * dz],
-            [0.5 * dx, -0.5 * dy, 0.5 * dz],
-            [0.5 * dx, 0.5 * dy, 0.5 * dz],
-            [-0.5 * dx, 0.5 * dy, 0.5 * dz],
-        ])
+    Ke = hex8_stiffness_matrix(mat["E0"], mat["nu"], domain.dx, domain.dy, domain.dz)
+    edof = domain.get_element_dofs()
 
-        gp = 1.0 / np.sqrt(3.0)
-        gauss = [-gp, gp]
-        KE = np.zeros((24, 24))
+    x = np.full((nelx, nely, nelz), volfrac)
+    E_min = 1e-9 * mat["E0"]
 
-        for xi in gauss:
-            for eta in gauss:
-                for zeta in gauss:
-                    dN_dxi = self._get_shape_derivatives(xi, eta, zeta)
-                    J = dN_dxi.T @ node_coords
-                    detJ = np.linalg.det(J)
-                    invJ = np.linalg.inv(J)
-                    dN_dx = dN_dxi @ invJ
+    fixed_dofs = []
+    for y in range(domain.nny):
+        for z in range(domain.nnz):
+            n1 = z * (domain.nnx * domain.nny) + y * domain.nnx + 0
+            fixed_dofs.extend([3*n1, 3*n1+1, 3*n1+2])
+            n2 = z * (domain.nnx * domain.nny) + y * domain.nnx + domain.nelx
+            fixed_dofs.extend([3*n2+1, 3*n2+2])
 
-                    B = np.zeros((6, 24))
-                    for i in range(8):
-                        B[0, 3 * i] = dN_dx[i, 0]
-                        B[1, 3 * i + 1] = dN_dx[i, 1]
-                        B[2, 3 * i + 2] = dN_dx[i, 2]
-                        B[3, 3 * i] = dN_dx[i, 1]
-                        B[3, 3 * i + 1] = dN_dx[i, 0]
-                        B[4, 3 * i + 1] = dN_dx[i, 2]
-                        B[4, 3 * i + 2] = dN_dx[i, 1]
-                        B[5, 3 * i] = dN_dx[i, 2]
-                        B[5, 3 * i + 2] = dN_dx[i, 0]
+    fixed_dofs = np.unique(fixed_dofs)
+    free_dofs = np.setdiff1d(np.arange(domain.num_dofs), fixed_dofs)
 
-                    KE += detJ * (B.T @ self.D_mat @ B)
+    F = np.zeros(domain.num_dofs)
+    center_x = domain.nelx // 2
+    top_z = domain.nelz
+    load_node = top_z * (domain.nnx * domain.nny) + (domain.nely // 2) * domain.nnx + center_x
+    F[3 * load_node + 2] = -1000.0
 
-        return KE
+    iK = np.kron(edof, np.ones((24, 1))).flatten()
+    jK = np.kron(edof, np.ones((1, 24))).flatten()
 
-    def evaluate_signed_element_stresses(self, stress_vec):
-        """Calculates signed equivalent stress (MPa) indicating Tension (+) vs Compression (-)."""
-        sig_x, sig_y, sig_z, tau_xy, tau_yz, tau_zx = stress_vec
+    for it in range(max_iter):
+        E_elem = E_min + (x.flatten() ** penal) * (mat["E0"] - E_min)
+        sK = (Ke.flatten()[:, None] @ E_elem[None, :]).T.flatten()
 
-        S_tensor = np.array([
-            [sig_x, tau_xy, tau_zx],
-            [tau_xy, sig_y, tau_yz],
-            [tau_zx, tau_yz, sig_z],
-        ])
+        K = csc_matrix((sK, (iK, jK)), shape=(domain.num_dofs, domain.num_dofs))
+        K_free = K[free_dofs, :][:, free_dofs]
 
-        p_vals = np.sort(np.linalg.eigvalsh(S_tensor))[::-1]
-        sig1, sig3 = p_vals[0], p_vals[2]
+        U_free = spsolve(K_free, F[free_dofs])
+        U = np.zeros(domain.num_dofs)
+        U[free_dofs] = U_free
 
-        if self.domain.material_type in ["steel", "generic"]:
-            vm = np.sqrt(
-                0.5
-                * (
-                    (sig_x - sig_y) ** 2
-                    + (sig_y - sig_z) ** 2
-                    + (sig_z - sig_x) ** 2
-                )
-                + 3.0 * (tau_xy**2 + tau_yz**2 + tau_zx**2)
-            )
-            dominant_sig = sig1 if abs(sig1) >= abs(sig3) else sig3
-            sign = 1.0 if dominant_sig >= 0 else -1.0
-            return sign * vm
-        else:
-            return sig1 if abs(sig1) >= abs(sig3) else sig3
+        U_elem = U[edof]
+        ce = np.sum((U_elem @ Ke) * U_elem, axis=1)
+        c = np.sum((E_min + (x.flatten() ** penal) * (mat["E0"] - E_min)) * ce)
 
-    def recover_element_stress_field(self, U):
-        """Recovers physical element Cauchy stresses (MPa) evaluated at centroids."""
-        dx, dy, dz = self.domain.dx, self.domain.dy, self.domain.dz
-        node_coords = np.array([
-            [-0.5 * dx, -0.5 * dy, -0.5 * dz],
-            [0.5 * dx, -0.5 * dy, -0.5 * dz],
-            [0.5 * dx, 0.5 * dy, -0.5 * dz],
-            [-0.5 * dx, 0.5 * dy, -0.5 * dz],
-            [-0.5 * dx, -0.5 * dy, 0.5 * dz],
-            [0.5 * dx, -0.5 * dy, 0.5 * dz],
-            [0.5 * dx, 0.5 * dy, 0.5 * dz],
-            [-0.5 * dx, 0.5 * dy, 0.5 * dz],
-        ])
+        dc = -penal * (x.flatten() ** (penal - 1)) * (mat["E0"] - E_min) * ce
+        dc = dc.reshape((nelx, nely, nelz))
 
-        dN_dxi_0 = self._get_shape_derivatives(0.0, 0.0, 0.0)
-        J_0 = dN_dxi_0.T @ node_coords
-        invJ_0 = np.linalg.inv(J_0)
-        dN_dx_0 = dN_dxi_0 @ invJ_0
+        l1, l2, move = 0.0, 1e9, 0.2
+        while (l2 - l1) > 1e-4:
+            lmid = 0.5 * (l2 + l1)
+            x_candidate = np.maximum(0.0, np.maximum(x - move, np.minimum(1.0, np.minimum(x + move, x * np.sqrt(-dc / lmid)))))
+            if np.mean(x_candidate) - volfrac > 0:
+                l1 = lmid
+            else:
+                l2 = lmid
+            x = x_candidate
 
-        B_0 = np.zeros((6, 24))
-        for i in range(8):
-            B_0[0, 3 * i] = dN_dx_0[i, 0]
-            B_0[1, 3 * i + 1] = dN_dx_0[i, 1]
-            B_0[2, 3 * i + 2] = dN_dx_0[i, 2]
-            B_0[3, 3 * i] = dN_dx_0[i, 1]
-            B_0[3, 3 * i + 1] = dN_dx_0[i, 0]
-            B_0[4, 3 * i + 1] = dN_dx_0[i, 2]
-            B_0[4, 3 * i + 2] = dN_dx_0[i, 1]
-            B_0[5, 3 * i] = dN_dx_0[i, 2]
-            B_0[5, 3 * i + 2] = dN_dx_0[i, 0]
-
-        U_elem = U[self.edof_vec]  # (Nelem, 24) in mm
-        strains = U_elem @ B_0.T  # (Nelem, 6)
-        raw_stresses = strains @ self.D_mat.T  # (Nelem, 6) in MPa
-
-        elem_stresses_mpa = np.zeros(self.domain.n_elems)
-
-        for e in range(self.domain.n_elems):
-            stress_vec = raw_stresses[e, :]
-            elem_stresses_mpa[e] = self.evaluate_signed_element_stresses(
-                stress_vec
-            )
-
-        return elem_stresses_mpa
-
-    def recover_nodal_displacements(self, U):
-        """Extracts 3D displacement vectors [Ux, Uy, Uz] and magnitudes (mm) for all grid nodes."""
-        U_nodes = U.reshape((-1, 3))
-        disp_magnitudes = np.linalg.norm(U_nodes, axis=1)
-        return U_nodes, disp_magnitudes
-
-    def _precompute_indexing(self):
-        nx, ny, nz = self.domain.nx, self.domain.ny, self.domain.nz
-        nodenrs = np.arange(self.domain.n_nodes).reshape(
-            (nx + 1, ny + 1, nz + 1)
-        )
-
-        edof_vec = np.zeros((self.domain.n_elems, 24), dtype=int)
-        el = 0
-        for ex in range(nx):
-            for ey in range(ny):
-                for ez in range(nz):
-                    nodes = [
-                        nodenrs[ex, ey, ez],
-                        nodenrs[ex + 1, ey, ez],
-                        nodenrs[ex + 1, ey + 1, ez],
-                        nodenrs[ex, ey + 1, ez],
-                        nodenrs[ex, ey, ez + 1],
-                        nodenrs[ex + 1, ey, ez + 1],
-                        nodenrs[ex + 1, ey + 1, ez + 1],
-                        nodenrs[ex, ey + 1, ez + 1],
-                    ]
-                    edof = []
-                    for n in nodes:
-                        edof.extend([3 * n, 3 * n + 1, 3 * n + 2])
-                    edof_vec[el, :] = edof
-                    el += 1
-
-        self.edof_vec = edof_vec
-        self.iK = np.kron(edof_vec, np.ones((24, 1), dtype=int)).flatten()
-        self.jK = np.kron(edof_vec, np.ones((1, 24), dtype=int)).flatten()
-
-    def _precompute_filter_kernel(self):
-        """Precomputes physical distance-based filter kernel in mm."""
-        rx_vox = int(np.ceil(self.rmin_mm / self.domain.dx))
-        ry_vox = int(np.ceil(self.rmin_mm / self.domain.dy))
-        rz_vox = int(np.ceil(self.rmin_mm / self.domain.dz))
-
-        px, py, pz = np.meshgrid(
-            np.arange(-rx_vox, rx_vox + 1),
-            np.arange(-ry_vox, ry_vox + 1),
-            np.arange(-rz_vox, rz_vox + 1),
-            indexing="ij",
-        )
-
-        dist_mm = np.sqrt(
-            (px * self.domain.dx) ** 2 +
-            (py * self.domain.dy) ** 2 +
-            (pz * self.domain.dz) ** 2
-        )
-
-        self.filter_kernel = np.maximum(0.0, self.rmin_mm - dist_mm)
-
-        ones_grid = np.ones((self.domain.nx, self.domain.ny, self.domain.nz))
-        self.filter_Hsum = fftconvolve(ones_grid, self.filter_kernel, mode="same")
-        self.filter_Hsum[self.filter_Hsum <= 0] = 1.0
-
-    def filter_sensitivity(self, dc, x):
-        """Sigmund (2007) density-weighted sensitivity filter."""
-        numerator = fftconvolve(x * dc, self.filter_kernel, mode="same")
-        denom = np.maximum(x, 1e-3) * self.filter_Hsum
-        return numerator / denom
-
-    def compute_self_weight_vector(self, x):
-        """Computes self-weight body force vector in -Z (N)."""
-        ndof = self.domain.ndof
-        Fsw = np.zeros(ndof)
-
-        if self.domain.gamma_n_mm3 <= 0.0:
-            return Fsw
-
-        vol_elem = self.domain.dx * self.domain.dy * self.domain.dz
-        x_flat = x.flatten()
-        elem_weight_n = self.domain.gamma_n_mm3 * vol_elem * x_flat
-        node_weight_n = elem_weight_n / 8.0
-
-        z_dofs = self.edof_vec[:, 2::3]
-        np.add.at(Fsw, z_dofs.flatten(), np.repeat(-node_weight_n, 8))
-
-        return Fsw
-
-    def compute_notension_penalty(self, U):
-        """Approximate Rankine sensitivity penalty for brittle materials."""
-        elem_stress = self.recover_element_stress_field(U)
-        stress_grid = elem_stress.reshape(
-            (self.domain.nx, self.domain.ny, self.domain.nz)
-        )
-        tension_part_mpa = np.maximum(stress_grid, 0.0)
-        penalty = (
-            self.notension_weight
-            * (tension_part_mpa / max(self.f_yd, 1e-6))
-            * (self.Emax - self.Emin)
-        )
-        return penalty
-
-    def assemble_and_solve_static(self, x, include_self_weight=False):
-        """Assembles stiffness matrix and solves KU = F with CG verification & direct fallback."""
-        ndof = self.domain.ndof
-        x_flat = x.flatten()
-
-        E_factor = (self.Emin / self.Emax) + (x_flat**self.penal_k) * (
-            1.0 - (self.Emin / self.Emax)
-        )
-        sK = (
-            self.KE.flatten()[np.newaxis, :] * E_factor[:, np.newaxis]
-        ).flatten()
-
-        K = sp.coo_matrix((sK, (self.iK, self.jK)), shape=(ndof, ndof)).tocsr()
-
-        F = self.domain.F.copy()
-        if include_self_weight:
-            F = F + self.compute_self_weight_vector(x)
-
-        fixed = np.unique(self.domain.fixed_dofs)
-        free = np.setdiff1d(np.arange(ndof), fixed)
-
-        K_free = K[free, :][:, free]
-        F_free = F[free]
-
-        diag_K = K_free.diagonal()
-        diag_K[diag_K == 0] = 1.0
-        M = sp.coo_matrix(
-            (1.0 / diag_K, (np.arange(len(free)), np.arange(len(free))))
-        ).tocsr()
-
-        u_free, info = cg(
-            K_free, F_free, M=M, maxiter=3000, rtol=1e-5, atol=1e-8
-        )
-
-        if info != 0:
-            u_free = spsolve(K_free, F_free)
-
-        U = np.zeros(ndof)
-        U[free] = u_free
-        return U, K, free
+    verts, faces, normals, values = marching_cubes(x, level=0.5, spacing=(domain.dx, domain.dy, domain.dz))
+    return verts.tolist(), faces.tolist(), float(c)
