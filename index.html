@@ -31,21 +31,24 @@
         }
         input:focus, select:focus { border-color: #000000; }
 
-        /* Dark Monochrome Checkbox Styling (Eliminates Browser Default Blue Fill) */
+        /* Precise Square Monochrome Checkbox Styling */
         input[type="checkbox"] {
             -webkit-appearance: none;
             appearance: none;
-            width: 14px;
-            height: 14px;
+            width: 14px !important;
+            height: 14px !important;
+            min-width: 14px !important;
+            min-height: 14px !important;
+            flex-shrink: 0;
             background: #ffffff;
             border: 1px solid #000000;
             border-radius: 0px;
             cursor: pointer;
             outline: none;
             position: relative;
-            margin: 0;
+            margin: 0 4px 0 0;
             vertical-align: middle;
-            accent-color: #000000;
+            display: inline-block;
         }
         input[type="checkbox"]:checked {
             background: #000000;
@@ -57,7 +60,7 @@
             left: 4px;
             top: 1px;
             width: 3px;
-            height: 7px;
+            height: 6px;
             border: solid #ffffff;
             border-width: 0 2px 2px 0;
             transform: rotate(45deg);
