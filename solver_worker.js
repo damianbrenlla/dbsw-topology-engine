@@ -7,43 +7,36 @@ async function initEngine() {
         self.postMessage({ type: "STATUS", message: "Downloading Pyodide core engine..." });
         pyodide = await loadPyodide();
 
-        self.postMessage({ type: "STATUS", message: "Loading NumPy & SciPy sparse matrix solver (Wasm)..." });
+        self.postMessage({ type: "STATUS", message: "Loading NumPy & SciPy (Wasm)..." });
         await pyodide.loadPackage(["numpy", "scipy"]);
 
-        self.postMessage({ type: "STATUS", message: "Loading Scikit-Image Marching Cubes module..." });
+        self.postMessage({ type: "STATUS", message: "Loading Scikit-Image..." });
         await pyodide.loadPackage("scikit-image");
 
         self.postMessage({ type: "STATUS", message: "Fetching Eurocode Python FEA modules..." });
-        const files = ["domain.py", "materials.py", "solvers.py"];
-        const modules = {};
+
+        // Ensure Virtual Filesystem directory structure exists
+        try { pyodide.FS.mkdir('/python_core'); } catch (e) { /* directory already exists */ }
+
+        const files = ["__init__.py", "domain.py", "materials.py", "solvers.py"];
 
         for (const file of files) {
             const response = await fetch(`./python_core/${file}?v=${Date.now()}`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status} fetching python_core/${file}`);
             }
-            modules[file] = await response.text();
+            const content = await response.text();
+            // Write raw string directly into Pyodide's virtual RAM filesystem
+            pyodide.FS.writeFile(`/python_core/${file}`, content);
         }
 
-        self.postMessage({ type: "STATUS", message: "Injecting module registry into Pyodide RAM..." });
+        self.postMessage({ type: "STATUS", message: "Mounting Python modules into sys.path..." });
         await pyodide.runPythonAsync(`
 import sys
-import types
+if '/' not in sys.path:
+    sys.path.append('/')
 
-python_core = types.ModuleType("python_core")
-sys.modules["python_core"] = python_core
-
-domain_mod = types.ModuleType("python_core.domain")
-exec("""${modules["domain.py"].replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$/g, "\\$")}""", domain_mod.__dict__)
-sys.modules["python_core.domain"] = domain_mod
-
-mat_mod = types.ModuleType("python_core.materials")
-exec("""${modules["materials.py"].replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$/g, "\\$")}""", mat_mod.__dict__)
-sys.modules["python_core.materials"] = mat_mod
-
-solv_mod = types.ModuleType("python_core.solvers")
-exec("""${modules["solvers.py"].replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$/g, "\\$")}""", solv_mod.__dict__)
-sys.modules["python_core.solvers"] = solv_mod
+import python_core.solvers as solvers
         `);
 
         self.postMessage({ type: "READY" });
