@@ -327,7 +327,7 @@ class TopologyOptimiser3DCompliance:
         ).tocsr()
 
         u_free, info = cg(
-            K_free, F_free, M=M, maxiter=3000, rtol=1e-5, atol=1e-8
+            K_free, F_free, M=M, maxiter=3000, tol=1e-8
         )
 
         if info != 0:
