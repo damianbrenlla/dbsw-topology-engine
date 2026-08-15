@@ -29,12 +29,11 @@
         #sidebar::-webkit-scrollbar-thumb:hover {
             background: #333333;
         }
-        /* Scrollbar Arrow Buttons */
         #sidebar::-webkit-scrollbar-button:single-button {
             background-color: #ffffff;
             display: block;
             border-style: solid;
-            height: 10px;
+            height: 100px;
             width: 6px;
         }
         #sidebar::-webkit-scrollbar-button:single-button:vertical:decrement {
@@ -64,7 +63,7 @@
         }
         input:focus, select:focus { border-color: #000000; }
 
-        /* Precise Square Monochrome Checkbox Styling (Fixed Flex-Shrink & Aspect Bounds) */
+        /* Guarantees 1:1 Aspect Ratio Square Checkbox */
         input[type="checkbox"] {
             -webkit-appearance: none;
             appearance: none;
@@ -74,6 +73,7 @@
             min-height: 14px !important;
             max-width: 14px !important;
             max-height: 14px !important;
+            aspect-ratio: 1 / 1 !important;
             flex-shrink: 0 !important;
             background: #ffffff;
             border: 1px solid #000000;
@@ -84,6 +84,7 @@
             margin: 0 6px 0 0;
             vertical-align: middle;
             display: inline-block;
+            line-height: 0;
         }
         input[type="checkbox"]:checked {
             background: #000000;
@@ -275,7 +276,7 @@
 
     <div id="preset_supports_div" class="control-group">
         <label>Support Presets</label>
-        <select id="support_preset">
+        <select id="support_preset" onchange="updateDomainVisuals()">
             <option value="simply_supported">Simply Supported Ends (X = 0 & X = Lx)</option>
             <option value="cantilever">Cantilever Wall (X = 0 mm, Fixed Face)</option>
             <option value="four_corners">Four Corner Columns (Bottom Z = 0)</option>
@@ -670,7 +671,7 @@
         return supports;
     }
 
-    /* Graphical Rendering of Pin (Left / Emerald Green) & Roller (Right / Coral Red) Supports + Load Arrows */
+    /* Universal 3D Support Visualiser (Presets & Custom Bounding Boxes) */
     function updateDomainVisuals() {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -683,32 +684,56 @@
         domainBox.position.set(Lx / 2.0, Lz / 2.0, Ly / 2.0);
         scene.add(domainBox);
 
-        // Clear existing gizmos
+        // Clear existing support gizmos
         supportGizmos.forEach(function(g) { scene.remove(g); });
         supportGizmos = [];
 
         var size = Math.max(120, Lz * 0.22);
         var supMode = document.getElementById('support_mode').value;
 
+        // Shared Materials for Universal Support Primitives
+        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 }); // Emerald Green (Fixed XYZ)
+        var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 }); // Coral Red (Roller YZ)
+
         if (supMode === 'preset') {
             var preset = document.getElementById('support_preset').value;
+            
             if (preset === 'simply_supported') {
-                // Pin Support Left (Pyramid - Emerald Green)
+                // Pin Support Left (Pyramid at X=0)
                 var pinGeo = new THREE.ConeGeometry(size, size * 1.2, 4);
-                var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 });
                 var pinMesh = new THREE.Mesh(pinGeo, pinMat);
                 pinMesh.position.set(0, -size * 0.5, Ly / 2.0);
                 scene.add(pinMesh);
                 supportGizmos.push(pinMesh);
 
-                // Roller Support Right (Cylinder - Coral Red)
+                // Roller Support Right (Cylinder at X=Lx)
                 var rollerGeo = new THREE.CylinderGeometry(size * 0.35, size * 0.35, Ly, 16);
-                var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 });
                 var rollerMesh = new THREE.Mesh(rollerGeo, rollerMat);
                 rollerMesh.rotation.x = Math.PI / 2;
                 rollerMesh.position.set(Lx, -size * 0.35, Ly / 2.0);
                 scene.add(rollerMesh);
                 supportGizmos.push(rollerMesh);
+
+            } else if (preset === 'cantilever') {
+                // Fixed Cantilever Wall Face (X = 0 mm)
+                var wallGeo = new THREE.BoxGeometry(size * 0.4, Lz, Ly);
+                var wallMesh = new THREE.Mesh(wallGeo, pinMat);
+                wallMesh.position.set(-size * 0.2, Lz / 2.0, Ly / 2.0);
+                scene.add(wallMesh);
+                supportGizmos.push(wallMesh);
+
+            } else if (preset === 'four_corners') {
+                // Four Corner Pyramids at Z = 0
+                var cornerGeo = new THREE.ConeGeometry(size * 0.8, size, 4);
+                var corners = [
+                    [0, 0], [Lx, 0], [0, Ly], [Lx, Ly]
+                ];
+                corners.forEach(function(pt) {
+                    var cMesh = new THREE.Mesh(cornerGeo, pinMat);
+                    cMesh.position.set(pt[0], -size * 0.4, pt[1]);
+                    scene.add(cMesh);
+                    supportGizmos.push(cMesh);
+                });
             }
         }
 
@@ -720,24 +745,26 @@
             var yMax = parseFloat(document.getElementById('sup_y_max').value) || 0;
             var zMin = parseFloat(document.getElementById('sup_z_min').value) || 0;
             var zMax = parseFloat(document.getElementById('sup_z_max').value) || 0;
-            var dx = Math.max(xMax - xMin, 5), dy = Math.max(yMax - yMin, 5), dz = Math.max(zMax - zMin, 5);
+            
+            var dx = Math.max(xMax - xMin, size * 0.5), dy = Math.max(yMax - yMin, size * 0.5), dz = Math.max(zMax - zMin, size * 0.5);
             var supGeo = new THREE.BoxGeometry(dx, dz, dy);
-            var supEdges = new THREE.EdgesGeometry(supGeo);
-            supportBoxVisual = new THREE.LineSegments(supEdges, new THREE.LineBasicMaterial({ color: 0x0000ff }));
-            supportBoxVisual.position.set(xMin + dx / 2.0, zMin + dz / 2.0, yMin + dy / 2.0);
-            scene.add(supportBoxVisual);
+            var supMesh = new THREE.Mesh(supGeo, pinMat);
+            supMesh.position.set(xMin + dx / 2.0, zMin + dz / 2.0, yMin + dy / 2.0);
+            scene.add(supMesh);
+            supportGizmos.push(supMesh);
         }
 
+        // Render Point Supports Table Entries
         var pointSups = getPointSupportArrayData();
-        var sphereGeo = new THREE.SphereGeometry(size * 0.25, 16, 16);
-        var sphereMat = new THREE.MeshStandardMaterial({ color: 0x0000ff });
+        var sphereGeo = new THREE.SphereGeometry(size * 0.3, 16, 16);
         pointSups.forEach(function(ps) {
-            var sphere = new THREE.Mesh(sphereGeo, sphereMat);
+            var sphere = new THREE.Mesh(sphereGeo, pinMat);
             sphere.position.set(ps.x, ps.z, ps.y);
             scene.add(sphere);
             supportGizmos.push(sphere);
         });
 
+        // Render Load Vectors
         forceArrows.forEach(function(a) { scene.remove(a); });
         forceArrows = [];
         getLoadArrayData().forEach(function(ld) {
