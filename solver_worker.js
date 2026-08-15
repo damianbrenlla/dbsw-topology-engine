@@ -1,28 +1,29 @@
-// DBSW R260003 Topology Engine — Client-Side Pyodide/Wasm Web Worker
-// Author: Damian Brenlla / DBSW 2026
+/**
+ * DBSW R260003 Topology Engine - Client-Side Pyodide WebWorker
+ * Author: Damian Brenlla / DBSW 2026
+ */
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
 
 let pyodide = null;
 
-/**
- * Boots the WebAssembly CPython runtime and pre-loads scientific packages
- * directly into the client's browser local memory.
- */
 async function initPyodideEngine() {
     try {
         postMessage({ status: "log", message: "Initialising WebAssembly Python runtime..." });
         pyodide = await loadPyodide();
 
-        postMessage({ status: "log", message: "Loading NumPy, SciPy & Scikit-Image into browser..." });
+        postMessage({ status: "log", message: "Loading NumPy, SciPy & Scikit-Image into browser memory..." });
         await pyodide.loadPackage(["numpy", "scipy", "scikit-image"]);
 
-        postMessage({ status: "log", message: "Importing DBSW Python structural core into Wasm VFS..." });
+        postMessage({ status: "log", message: "Mounting DBSW Python structural core into Wasm MEMFS..." });
 
-        // Copy Python source files into Pyodide's Virtual File System (VFS)
+        // Create the entire virtual path recursively to prevent Emscripten FS errors
+        pyodide.FS.mkdirTree("/home/pyodide/core");
+
+        // Fetch Python source files over HTTP and write into Pyodide VFS
         const files = ["domain.py", "materials.py", "solvers.py", "__init__.py"];
         for (const file of files) {
-            const response = await fetch(`./python_core/${file}`);
+            const response = await fetch(`./python_core/${file}?cb=${Date.now()}`);
             if (!response.ok) {
                 throw new Error(`Failed to fetch ./python_core/${file} (HTTP ${response.status})`);
             }
@@ -30,11 +31,11 @@ async function initPyodideEngine() {
             pyodide.FS.writeFile(`/home/pyodide/core/${file}`, code);
         }
 
-        // Configure Pyodide sys.path and verify core imports
+        // Configure sys.path and verify module import chain
         await pyodide.runPythonAsync(`
 import sys
-import os
-sys.path.append('/home/pyodide')
+if '/home/pyodide' not in sys.path:
+    sys.path.append('/home/pyodide')
 
 from core.domain import Domain3D
 from core.materials import EurocodeMaterialRegistry
@@ -51,9 +52,6 @@ import json
     }
 }
 
-/**
- * Listens for solve requests dispatched from index.html (Three.js UI)
- */
 self.onmessage = async function(e) {
     const { action, payload } = e.data;
 
@@ -71,17 +69,15 @@ self.onmessage = async function(e) {
         try {
             postMessage({ status: "running", current_iter: 1, total_iter: payload.iterations });
 
-            // Pass payload to Python environment
             pyodide.globals.set("payload_json", JSON.stringify(payload));
 
-            // Execute compliance optimization loop inside WebAssembly
             const resultJson = await pyodide.runPythonAsync(`
 payload = json.loads(payload_json)
 
-# 1. Material Resolution
+# 1. Material Resolution (EC2, EC3, EC5)
 mat_props = EurocodeMaterialRegistry.resolve_properties(payload)
 
-# 2. Domain Initialization
+# 2. Domain Discretisation
 domain = Domain3D(
     Lx=float(payload["Lx"]), Ly=float(payload["Ly"]), Lz=float(payload["Lz"]),
     nx=int(payload["nx"]), ny=int(payload["ny"]), nz=int(payload["nz"]),
@@ -89,25 +85,25 @@ domain = Domain3D(
     material_type=mat_props["material_type"], material_name=mat_props["material_name"]
 )
 
-# 3. Boundary Restraints
+# 3. Boundary Restraints (Pin-Roller Simply Supported Beam Setup)
 sup_mode = payload.get("support_mode", "preset")
 if sup_mode == "preset":
     domain.add_support_box([0.0, 0.0], [0.0, domain.Ly], [0.0, 0.0], dofs="xyz")
     domain.add_support_box([domain.Lx, domain.Lx], [0.0, domain.Ly], [0.0, 0.0], dofs="yz")
 
-# 4. Loading Definitions
+# 4. Point Loads
 for ld in payload.get("loads", []):
     domain.add_point_load(
         [float(ld["x"]), float(ld["y"]), float(ld["z"])], 
         [float(ld["Fx"])*1000.0, float(ld["Fy"])*1000.0, float(ld["Fz"])*1000.0]
     )
 
-# 5. SIMP Optimiser Initialization
+# 5. SIMP Optimiser Setup
 volfrac = float(payload.get("volfrac", 0.20))
 iterations = int(payload.get("iterations", 30))
 opt = TopologyOptimiser3DCompliance(domain=domain, volfrac=volfrac, penal_k=1.0, rmin_mm=150.0)
 
-# 6. Optimization Loop
+# 6. SIMP Optimisation Loop
 for i in range(iterations):
     if i > 0 and i % max(1, iterations // 5) == 0:
         opt.penal_k = min(3.0, opt.penal_k + 0.5)
@@ -134,7 +130,7 @@ for i in range(iterations):
             l2 = lmid
     opt.x = xnew
 
-# 7. Final Solved State & Connected Component Isosurface
+# 7. Marching Cubes Isosurface Extraction
 U_final, _, _ = opt.assemble_and_solve_static(opt.x)
 padded_x = np.pad(opt.x, 1, mode="constant", constant_values=0)
 SOLID_LEVEL = max(0.35, min(0.50, volfrac * 1.5))
@@ -144,7 +140,7 @@ labeled_grid, num_features = label(binary_grid)
 
 if num_features > 1:
     component_sizes = np.bincount(labeled_grid.ravel())
-    component_sizes[0] = 0  # Ignore void background
+    component_sizes[0] = 0
     main_component_id = np.argmax(component_sizes)
     padded_x[labeled_grid != main_component_id] = 0.0
 
@@ -153,7 +149,7 @@ level = SOLID_LEVEL if data_max >= SOLID_LEVEL else max(0.10, data_max * 0.8)
 
 verts, faces, _, _ = measure.marching_cubes(padded_x, level=level)
 
-# 8. Physical mm Coordinate Mapping & Field Sampling
+# 8. Physical mm Mapping & Stress Field Recovery
 verts_mm = np.copy(verts)
 verts_mm[:, 0] = (verts[:, 0] - 1.0) * domain.dx
 verts_mm[:, 1] = (verts[:, 1] - 1.0) * domain.dy
