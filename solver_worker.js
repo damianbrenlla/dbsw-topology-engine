@@ -23,10 +23,7 @@ async function initEngine() {
         // Ensure Virtual Filesystem directory structure exists in Pyodide RAM
         try { pyodide.FS.mkdir('/python_core'); } catch (e) { /* directory exists */ }
 
-        // Guarantee a valid package entrypoint in RAM
-        pyodide.FS.writeFile('/python_core/__init__.py', '"""DBSW Core Package"""');
-
-        const coreFiles = ["domain.py", "materials.py", "solvers.py"];
+        const coreFiles = ["__init__.py", "domain.py", "materials.py", "solvers.py"];
 
         for (const file of coreFiles) {
             const response = await fetch(`./python_core/${file}?v=${Date.now()}`);
@@ -34,7 +31,7 @@ async function initEngine() {
                 throw new Error(`HTTP ${response.status} fetching python_core/${file}`);
             }
             const content = await response.text();
-            // Direct write to Emscripten MEMFS eliminates all JS escaping/string literal syntax errors
+            // Direct write to Emscripten MEMFS eliminates all string escaping and package path resolution issues
             pyodide.FS.writeFile(`/python_core/${file}`, content);
         }
 
