@@ -3,25 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DBSW — 3D Topology Engine</title>
+    <title>DBSW — 3D Wasm Topology Engine</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         body { display: flex; height: 100vh; overflow: hidden; background: #111; color: #fff; }
-        #sidebar { width: 320px; background: #1a1a1a; padding: 20px; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #333; z-index: 10; }
+        #sidebar { width: 340px; background: #1a1a1a; padding: 20px; display: flex; flex-direction: column; gap: 14px; border-right: 1px solid #333; z-index: 10; overflow-y: auto; }
         h1 { font-size: 16px; letter-spacing: 1px; color: #fff; text-transform: uppercase; margin-bottom: 2px; }
-        .subtitle { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 10px; }
+        .subtitle { font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px; }
         .form-group { display: flex; flex-direction: column; gap: 5px; }
         label { font-size: 11px; text-transform: uppercase; color: #aaa; font-weight: 600; }
-        input, select { background: #2a2a2a; border: 1px solid #444; color: #fff; padding: 8px; font-size: 13px; border-radius: 4px; }
+        input, select { background: #2a2a2a; border: 1px solid #444; color: #fff; padding: 8px; font-size: 12px; border-radius: 4px; outline: none; }
+        input:focus, select:focus { border-color: #00a8ff; }
         .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        button { background: #fff; color: #000; border: none; padding: 12px; font-weight: 700; font-size: 12px; text-transform: uppercase; cursor: pointer; border-radius: 4px; transition: 0.2s; }
+        button { background: #fff; color: #000; border: none; padding: 12px; font-weight: 700; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; cursor: pointer; border-radius: 4px; transition: 0.2s; }
         button:hover { background: #ccc; }
-        button:disabled { background: #444; color: #888; cursor: not-allowed; }
-        #status { font-size: 12px; padding: 10px; border-radius: 4px; background: #222; border: 1px solid #333; color: #aaa; }
+        button:disabled { background: #333; color: #666; cursor: not-allowed; }
+        #status { font-size: 11px; padding: 10px; border-radius: 4px; background: #222; border: 1px solid #333; color: #aaa; line-height: 1.4; word-break: break-word; }
         #viewport { flex-grow: 1; position: relative; width: 100%; height: 100%; }
+        .version-tag { font-size: 9px; color: #555; text-align: right; margin-top: auto; padding-top: 10px; }
     </style>
-    <!-- Three.js + OrbitControls -->
+    <!-- Three.js & OrbitControls via CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
@@ -30,11 +32,11 @@
     <div id="sidebar">
         <div>
             <h1>DBSW</h1>
-            <div class="subtitle">3D WASM TOPOLOGY ENGINE</div>
+            <div class="subtitle">3D Wasm Topology Engine (Client-Side)</div>
         </div>
 
         <div class="form-group">
-            <label>Material Specification</label>
+            <label>Material Classification</label>
             <select id="mat_key">
                 <option value="EC3_STEEL">Structural Steel — EC3</option>
                 <option value="EC2_CONCRETE">Concrete C30/37 — EC2</option>
@@ -43,45 +45,49 @@
         </div>
 
         <div class="form-group">
-            <label>Domain Dimensions (Lx, Ly, Lz mm)</label>
+            <label>Domain Dimensions Lx, Ly, Lz (mm)</label>
             <div class="grid-3">
-                <input type="number" id="lx" value="6000">
-                <input type="number" id="ly" value="300">
-                <input type="number" id="lz" value="600">
+                <input type="number" id="lx" value="6000" title="Length Lx">
+                <input type="number" id="ly" value="300" title="Width Ly">
+                <input type="number" id="lz" value="600" title="Height Lz">
             </div>
         </div>
 
         <div class="form-group">
-            <label>FE Mesh Divisions (nx, ny, nz)</label>
+            <label>FE Divisions nx, ny, nz</label>
             <div class="grid-3">
-                <input type="number" id="nelx" value="36">
-                <input type="number" id="nely" value="9">
-                <input type="number" id="nelz" value="12">
+                <input type="number" id="nelx" value="36" title="Elements X">
+                <input type="number" id="nely" value="9" title="Elements Y">
+                <input type="number" id="nelz" value="12" title="Elements Z">
             </div>
         </div>
 
         <div class="form-group">
-            <label>Volume Fraction & Max Iterations</label>
+            <label>Volume Fraction & Iterations</label>
             <div class="grid-2">
-                <input type="number" id="volfrac" value="0.20" step="0.05">
-                <input type="number" id="max_iter" value="20">
+                <input type="number" id="volfrac" value="0.20" step="0.05" min="0.05" max="0.90" title="Volume Fraction Vf">
+                <input type="number" id="max_iter" value="20" min="1" max="100" title="Max SIMP Iterations">
             </div>
         </div>
 
-        <button id="btn-run" disabled>Initialising Wasm...</button>
-        <div id="status">Booting Pyodide WebAssembly runtime...</div>
+        <button id="btn-run" disabled>Initialising Engine...</button>
+        <button id="btn-export" disabled style="background: #2a2a2a; color: #fff; border: 1px solid #444;">Export .STL Mesh</button>
+        
+        <div id="status">Connecting to Pyodide Wasm background worker...</div>
+
+        <div class="version-tag">R260003 Horizon-2 Service Differentiator | DBSW Authorship</div>
     </div>
 
     <div id="viewport"></div>
 
     <script>
-        // --- 1. Three.js Scene Setup ---
+        // --- 1. Three.js Viewport & Scene Initialization ---
         const container = document.getElementById('viewport');
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x111111);
 
         const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
-        camera.position.set(10, 8, 12);
+        camera.position.set(12, 10, 15);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(container.clientWidth, container.clientHeight);
@@ -90,18 +96,27 @@
 
         const controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
 
-        // Lights & Grid
+        // Lighting Rig
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(20, 40, 20);
-        scene.add(dirLight);
 
-        const gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x222222);
+        const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight1.position.set(20, 40, 20);
+        scene.add(dirLight1);
+
+        const dirLight2 = new THREE.DirectionalLight(0x00a8ff, 0.3);
+        dirLight2.position.set(-20, -20, -20);
+        scene.add(dirLight2);
+
+        // Grid Alignment
+        const gridHelper = new THREE.GridHelper(30, 30, 0x444444, 0x222222);
+        gridHelper.position.y = -0.01;
         scene.add(gridHelper);
 
         let currentMesh = null;
+        let lastExtractedGeometry = null;
 
         function animate() {
             requestAnimationFrame(animate);
@@ -116,24 +131,30 @@
             renderer.setSize(container.clientWidth, container.clientHeight);
         });
 
-        // --- 2. WebWorker Communication ---
-        const worker = new Worker('solver_worker.js');
+        // --- 2. WebWorker Communication & State Management ---
+        const worker = new Worker('solver_worker.js?v=' + Date.now());
         const btnRun = document.getElementById('btn-run');
+        const btnExport = document.getElementById('btn-export');
         const statusDiv = document.getElementById('status');
 
         worker.postMessage({ type: 'INIT' });
 
         worker.onmessage = function (e) {
             const msg = e.data;
-            if (msg.type === 'READY') {
+            if (msg.type === 'STATUS') {
+                statusDiv.innerText = msg.message;
+                statusDiv.style.borderColor = '#333';
+            } else if (msg.type === 'READY') {
                 btnRun.disabled = false;
                 btnRun.innerText = 'EXECUTE OPTIMISATION';
                 statusDiv.innerText = 'Pyodide Wasm Engine Ready.';
                 statusDiv.style.borderColor = '#00ff88';
             } else if (msg.type === 'SUCCESS') {
                 btnRun.disabled = false;
+                btnExport.disabled = false;
                 btnRun.innerText = 'EXECUTE OPTIMISATION';
-                statusDiv.innerText = `Solve Complete! Compliance: ${msg.data.compliance.toExponential(4)}`;
+                statusDiv.innerText = `Solve Complete!\nCompliance: ${msg.data.compliance.toExponential(4)}`;
+                statusDiv.style.borderColor = '#00ff88';
                 renderTopologyMesh(msg.data.verts, msg.data.faces);
             } else if (msg.type === 'ERROR') {
                 btnRun.disabled = false;
@@ -145,8 +166,10 @@
 
         btnRun.addEventListener('click', () => {
             btnRun.disabled = true;
+            btnExport.disabled = true;
             btnRun.innerText = 'SOLVING IN WASM...';
-            statusDiv.innerText = 'Assembling global stiffness matrix & solving...';
+            statusDiv.innerText = 'Assembling global stiffness matrix & solving in browser memory...';
+            statusDiv.style.borderColor = '#00a8ff';
 
             const params = {
                 nelx: parseInt(document.getElementById('nelx').value),
@@ -163,7 +186,7 @@
             worker.postMessage({ type: 'RUN', params: params });
         });
 
-        // --- 3. Render Mesh extracted from Marching Cubes ---
+        // --- 3. Three.js Geometry Processing (Marching Cubes Mapping) ---
         function renderTopologyMesh(verts, faces) {
             if (currentMesh) scene.remove(currentMesh);
 
@@ -172,7 +195,8 @@
 
             for (const f of faces) {
                 for (const idx of f) {
-                    positions.push(verts[idx][0], verts[idx][2], verts[idx][1]); // Swap Y/Z for Three.js orientation
+                    // Coordinate transform: Swap Y/Z to map FE Z-up to Three.js Y-up viewport
+                    positions.push(verts[idx][0], verts[idx][2], verts[idx][1]);
                 }
             }
 
@@ -182,14 +206,44 @@
 
             const material = new THREE.MeshStandardMaterial({
                 color: 0x00a8ff,
-                roughness: 0.3,
+                roughness: 0.25,
                 metalness: 0.2,
                 side: THREE.DoubleSide
             });
 
             currentMesh = new THREE.Mesh(geometry, material);
             scene.add(currentMesh);
+            lastExtractedGeometry = geometry;
+
+            // Fit camera to object bounding sphere
+            geometry.computeBoundingSphere();
+            const radius = geometry.boundingSphere.radius;
+            camera.position.set(radius * 1.8, radius * 1.5, radius * 2.2);
+            controls.target.set(0, 0, 0);
         }
+
+        // --- 4. Client-Side ASCII .STL Exporter ---
+        btnExport.addEventListener('click', () => {
+            if (!lastExtractedGeometry) return;
+
+            const pos = lastExtractedGeometry.attributes.position.array;
+            let stl = 'solid DBSW_Topology_Mesh\n';
+
+            for (let i = 0; i < pos.length; i += 9) {
+                stl += `  facet normal 0 0 0\n    outer loop\n`;
+                stl += `      vertex ${pos[i].toFixed(4)} ${pos[i+1].toFixed(4)} ${pos[i+2].toFixed(4)}\n`;
+                stl += `      vertex ${pos[i+3].toFixed(4)} ${pos[i+4].toFixed(4)} ${pos[i+5].toFixed(4)}\n`;
+                stl += `      vertex ${pos[i+6].toFixed(4)} ${pos[i+7].toFixed(4)} ${pos[i+8].toFixed(4)}\n`;
+                stl += `    endloop\n  endfacet\n`;
+            }
+            stl += 'endsolid DBSW_Topology_Mesh\n';
+
+            const blob = new Blob([stl], { type: 'text/plain' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'DBSW_Optimised_Structure.stl';
+            link.click();
+        });
     </script>
 </body>
 </html>
