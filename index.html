@@ -194,8 +194,8 @@
     <div class="control-group">
         <label>Structural Material Classification</label>
         <select id="mat_type" onchange="updateMaterialUI()">
+            <option value="concrete" selected>Reinforced Concrete — BS EN 1992-1-1 (EC2)</option>
             <option value="steel">Structural Steel — BS EN 1993-1-1 (EC3)</option>
-            <option value="concrete">Reinforced Concrete — BS EN 1992-1-1 (EC2)</option>
             <option value="timber">Timber / Glulam — BS EN 1995-1-1 (EC5)</option>
             <option value="masonry">Structural Masonry — BS EN 1996-1-1 (EC6)</option>
             <option value="stone">Natural Stone Masonry — BS EN 1996-1-1</option>
@@ -229,19 +229,19 @@
     <div id="mat_generic_div" style="display: none; flex-direction: column; gap: 6px;">
         <div class="control-group">
             <label>Young's Modulus E (MPa)</label>
-            <input type="number" id="custom_E" value="210000">
+            <input type="number" id="custom_E" value="33000">
         </div>
         <div class="control-group">
             <label>Poisson's Ratio ν</label>
-            <input type="number" step="0.01" id="custom_nu" value="0.30">
+            <input type="number" step="0.01" id="custom_nu" value="0.20">
         </div>
         <div class="control-group">
             <label>Characteristic Design Yield Strength fk (MPa)</label>
-            <input type="number" id="custom_fk" value="355">
+            <input type="number" id="custom_fk" value="30">
         </div>
         <div class="control-group">
             <label>Unit Weight γ (kN/m³) — 0 disables self-weight</label>
-            <input type="number" step="0.1" id="custom_gamma" value="0">
+            <input type="number" step="0.1" id="custom_gamma" value="25.0">
         </div>
     </div>
 
@@ -351,7 +351,7 @@
     <div class="control-group">
         <label>Volume Fraction & Max Iterations</label>
         <div style="display: flex; gap: 6px;">
-            <input type="number" step="0.05" id="volfrac" value="0.20" style="width: 50%;">
+            <input type="number" step="0.05" id="volfrac" value="0.90" min="0.05" max="1.00" style="width: 50%;">
             <input type="number" id="iterations" value="20" style="width: 50%;">
         </div>
     </div>
@@ -414,7 +414,7 @@
     var supportGizmos = [];
     var currentVertices = [], currentFaces = [], currentStressesMPa = [], currentDeflectionsMM = [];
     var currentSigmaMaxAbs = 1.0, currentSigmaMaxTens = 1.0, currentSigmaMaxComp = -1.0;
-    var currentUMax = 1.0, currentFk = 355.0;
+    var currentUMax = 1.0, currentFk = 30.0;
     var worker = null;
     var engineReady = false;
 
@@ -452,13 +452,13 @@
             stdDiv.style.display = 'flex';
             var gradeSelect = document.getElementById('mat_grade');
             gradeSelect.innerHTML = '';
-            var list = (matType === 'steel') ? STEEL_GRADES : (matType === 'concrete' ? CONCRETE_GRADES : TIMBER_GRADES);
+            var list = (matType === 'concrete') ? CONCRETE_GRADES : ((matType === 'steel') ? STEEL_GRADES : TIMBER_GRADES);
             list.forEach(function(g) {
                 var opt = document.createElement('option');
                 opt.value = g; opt.innerText = g;
                 gradeSelect.appendChild(opt);
             });
-            gradeSelect.value = (matType === 'steel') ? 'S355' : (matType === 'concrete' ? 'C30/37' : 'C24');
+            gradeSelect.value = (matType === 'concrete') ? 'C30/37' : ((matType === 'steel') ? 'S355' : 'C24');
         } else if (matType === 'masonry' || matType === 'stone') {
             masDiv.style.display = 'flex';
             var uSelect = document.getElementById('masonry_unit_select');
@@ -843,7 +843,7 @@
             currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_tens : data.data.sigma_max_abs;
             currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : -data.data.sigma_max_abs;
             currentUMax = data.data.u_max;
-            currentFk = data.data.f_k || 355.0;
+            currentFk = data.data.f_k || 30.0;
 
             status.style.color = "#000000";
             status.style.borderLeftColor = "#000000";
@@ -883,10 +883,10 @@
             masonry_unit_fb: parseFloat(document.getElementById('masonry_unit_fb').value) || 20.0,
             mortar_fm: parseFloat(document.getElementById('mortar_fm').value) || 6.0,
             stone_E: parseFloat(document.getElementById('stone_E').value) || 35000.0,
-            custom_E: parseFloat(document.getElementById('custom_E').value) || 210000.0,
-            custom_nu: parseFloat(document.getElementById('custom_nu').value) || 0.30,
-            custom_fk: parseFloat(document.getElementById('custom_fk').value) || 355.0,
-            custom_gamma_kn_m3: parseFloat(document.getElementById('custom_gamma').value) || 0.0,
+            custom_E: parseFloat(document.getElementById('custom_E').value) || 33000.0,
+            custom_nu: parseFloat(document.getElementById('custom_nu').value) || 0.20,
+            custom_fk: parseFloat(document.getElementById('custom_fk').value) || 30.0,
+            custom_gamma_kn_m3: parseFloat(document.getElementById('custom_gamma').value) || 25.0,
             Lx: parseFloat(document.getElementById('Lx').value),
             Ly: parseFloat(document.getElementById('Ly').value),
             Lz: parseFloat(document.getElementById('Lz').value),
