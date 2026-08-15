@@ -1,36 +1,44 @@
+/**
+ * DBSW R260003 Topology Engine - Client-Side Pyodide WebWorker
+ * Handles Wasm initialization, MEMFS virtual file mounting, and background SIMP execution.
+ */
+
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
 
 let pyodide = null;
 
 async function initEngine() {
     try {
-        self.postMessage({ type: "STATUS", message: "Downloading Pyodide core engine..." });
+        self.postMessage({ type: "STATUS", message: "Downloading Pyodide WebAssembly runtime..." });
         pyodide = await loadPyodide();
 
-        self.postMessage({ type: "STATUS", message: "Loading NumPy & SciPy (Wasm)..." });
+        self.postMessage({ type: "STATUS", message: "Loading NumPy & SciPy (Wasm linear algebra binaries)..." });
         await pyodide.loadPackage(["numpy", "scipy"]);
 
-        self.postMessage({ type: "STATUS", message: "Loading Scikit-Image..." });
+        self.postMessage({ type: "STATUS", message: "Loading Scikit-Image Marching Cubes module..." });
         await pyodide.loadPackage("scikit-image");
 
-        self.postMessage({ type: "STATUS", message: "Fetching Eurocode Python FEA modules..." });
+        self.postMessage({ type: "STATUS", message: "Fetching Eurocode FEA Python modules from CDN..." });
 
-        // Ensure Virtual Filesystem directory structure exists
+        // Ensure Virtual Filesystem directory structure exists in Pyodide RAM
         try { pyodide.FS.mkdir('/python_core'); } catch (e) { /* directory exists */ }
 
-        const files = ["__init__.py", "domain.py", "materials.py", "solvers.py"];
+        // Guarantee a valid package entrypoint in RAM
+        pyodide.FS.writeFile('/python_core/__init__.py', '"""DBSW Core Package"""');
 
-        for (const file of files) {
-            const response = await fetch(`./python_core/${file}?cache_bust=${Date.now()}`);
+        const coreFiles = ["domain.py", "materials.py", "solvers.py"];
+
+        for (const file of coreFiles) {
+            const response = await fetch(`./python_core/${file}?v=${Date.now()}`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status} fetching python_core/${file}`);
             }
             const content = await response.text();
-            // Write raw string directly into Pyodide's virtual RAM filesystem
+            // Direct write to Emscripten MEMFS eliminates all JS escaping/string literal syntax errors
             pyodide.FS.writeFile(`/python_core/${file}`, content);
         }
 
-        self.postMessage({ type: "STATUS", message: "Mounting Python modules into sys.path..." });
+        self.postMessage({ type: "STATUS", message: "Mounting python_core into Pyodide sys.path..." });
         await pyodide.runPythonAsync(`
 import sys
 if '/' not in sys.path:
