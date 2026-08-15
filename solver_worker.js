@@ -4,10 +4,16 @@ let pyodide = null;
 
 async function initEngine() {
     try {
+        self.postMessage({ type: "STATUS", message: "Downloading Pyodide core engine..." });
         pyodide = await loadPyodide();
-        await pyodide.loadPackage(["numpy", "scipy", "scikit-image"]);
 
-        // Fetch Python source files over HTTP from GitHub Pages CDN
+        self.postMessage({ type: "STATUS", message: "Loading NumPy & SciPy sparse matrix solver (Wasm)..." });
+        await pyodide.loadPackage(["numpy", "scipy"]);
+
+        self.postMessage({ type: "STATUS", message: "Loading Scikit-Image Marching Cubes module..." });
+        await pyodide.loadPackage("scikit-image");
+
+        self.postMessage({ type: "STATUS", message: "Fetching Eurocode Python FEA modules..." });
         const files = ["domain.py", "materials.py", "solvers.py"];
         const modules = {};
 
@@ -19,7 +25,7 @@ async function initEngine() {
             modules[file] = await response.text();
         }
 
-        // Register modules directly in Pyodide's sys.modules space
+        self.postMessage({ type: "STATUS", message: "Injecting module registry into Pyodide RAM..." });
         await pyodide.runPythonAsync(`
 import sys
 import types
