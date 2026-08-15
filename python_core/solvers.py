@@ -12,11 +12,12 @@ class TopologyOptimiser3DCompliance:
     """Deterministic 3D Hex8 SIMP Engine for Linear-Elastic Compliance Minimization
 
     Features:
-      - Symmetric Isoparametric Integration Centered at Element Midpoints
-      - Exact Cauchy Stress Sign Alignment (+Tension Top, -Compression Bottom)
-      - Verified CG Solver Convergence with Direct-Solve Fallback
-      - Physical (mm-based) Distance Filter Kernel
-      - Sigmund (2007) Density-Weighted Sensitivity Filtering
+      - Verified CG solver convergence with direct-solve fallback
+      - Physical (mm-based) distance filter kernel
+      - Sigmund (2007) density-weighted sensitivity filtering (mesh-independent)
+      - Optional design-dependent self-weight loading
+      - Approximate no-tension sensitivity penalty for brittle/no-tension materials
+        (concrete, masonry, stone)
     """
 
     def __init__(
@@ -24,12 +25,12 @@ class TopologyOptimiser3DCompliance:
         domain: Domain3D,
         volfrac: float = 0.3,
         penal_k: float = 3.0,
-        rmin_mm: float = 150.0,
+        rmin_mm: float = 150.0,  # Physical filter radius in mm
         notension_weight: float = 3.0,
     ):
         self.domain = domain
         self.volfrac = volfrac
-        self.penal_k = penal_k
+        self.penal_k = penal_k  # SIMP penalisation exponent — mutable (see continuation in app.py)
         self.rmin_mm = rmin_mm
         self.notension_weight = notension_weight
 
@@ -81,16 +82,15 @@ class TopologyOptimiser3DCompliance:
     def _build_element_stiffness(self):
         """Integrates 24x24 element stiffness KE (N/mm) using 2x2x2 Gauss quadrature."""
         dx, dy, dz = self.domain.dx, self.domain.dy, self.domain.dz
-        # Symmetric node coordinates centered at midpoints
         node_coords = np.array([
-            [-0.5 * dx, -0.5 * dy, -0.5 * dz],
-            [0.5 * dx, -0.5 * dy, -0.5 * dz],
-            [0.5 * dx, 0.5 * dy, -0.5 * dz],
-            [-0.5 * dx, 0.5 * dy, -0.5 * dz],
-            [-0.5 * dx, -0.5 * dy, 0.5 * dz],
-            [0.5 * dx, -0.5 * dy, 0.5 * dz],
-            [0.5 * dx, 0.5 * dy, 0.5 * dz],
-            [-0.5 * dx, 0.5 * dy, 0.5 * dz],
+            [0.0, 0.0, 0.0],
+            [dx, 0.0, 0.0],
+            [dx, dy, 0.0],
+            [0.0, dy, 0.0],
+            [0.0, 0.0, dz],
+            [dx, 0.0, dz],
+            [dx, dy, dz],
+            [0.0, dy, dz],
         ])
 
         gp = 1.0 / np.sqrt(3.0)
@@ -155,14 +155,14 @@ class TopologyOptimiser3DCompliance:
         """Recovers physical element Cauchy stresses (MPa) evaluated at centroids."""
         dx, dy, dz = self.domain.dx, self.domain.dy, self.domain.dz
         node_coords = np.array([
-            [-0.5 * dx, -0.5 * dy, -0.5 * dz],
-            [0.5 * dx, -0.5 * dy, -0.5 * dz],
-            [0.5 * dx, 0.5 * dy, -0.5 * dz],
-            [-0.5 * dx, 0.5 * dy, -0.5 * dz],
-            [-0.5 * dx, -0.5 * dy, 0.5 * dz],
-            [0.5 * dx, -0.5 * dy, 0.5 * dz],
-            [0.5 * dx, 0.5 * dy, 0.5 * dz],
-            [-0.5 * dx, 0.5 * dy, 0.5 * dz],
+            [0.0, 0.0, 0.0],
+            [dx, 0.0, 0.0],
+            [dx, dy, 0.0],
+            [0.0, dy, 0.0],
+            [0.0, 0.0, dz],
+            [dx, 0.0, dz],
+            [dx, dy, dz],
+            [0.0, dy, dz],
         ])
 
         dN_dxi_0 = self._get_shape_derivatives(0.0, 0.0, 0.0)
@@ -234,7 +234,9 @@ class TopologyOptimiser3DCompliance:
         self.jK = np.kron(edof_vec, np.ones((1, 24), dtype=int)).flatten()
 
     def _precompute_filter_kernel(self):
-        """Precomputes physical distance-based filter kernel in mm."""
+        """Precomputes the RAW (unnormalised) physical distance-based filter kernel
+        in mm, plus the per-voxel neighbourhood weight sum used by the Sigmund (2007)
+        density-weighted sensitivity filter (see filter_sensitivity below)."""
         rx_vox = int(np.ceil(self.rmin_mm / self.domain.dx))
         ry_vox = int(np.ceil(self.rmin_mm / self.domain.dy))
         rz_vox = int(np.ceil(self.rmin_mm / self.domain.dz))
@@ -252,20 +254,43 @@ class TopologyOptimiser3DCompliance:
             (pz * self.domain.dz) ** 2
         )
 
+        # Raw (unnormalised) Sigmund cone-shaped weight H_ei = max(0, rmin - dist)
         self.filter_kernel = np.maximum(0.0, self.rmin_mm - dist_mm)
 
+        # Precompute sum_i(H_ei) per voxel — constant for the life of this mesh
         ones_grid = np.ones((self.domain.nx, self.domain.ny, self.domain.nz))
         self.filter_Hsum = fftconvolve(ones_grid, self.filter_kernel, mode="same")
         self.filter_Hsum[self.filter_Hsum <= 0] = 1.0
 
     def filter_sensitivity(self, dc, x):
-        """Sigmund (2007) density-weighted sensitivity filter."""
+        """Sigmund (2007) density-weighted mesh-independence sensitivity filter:
+
+            dc_filtered_e = (1 / max(x_e, eps)) * sum_i(H_ei * x_i * dc_i) / sum_i(H_ei)
+
+        This is the standard formulation used in the 88/99-line SIMP reference
+        codes and gives mesh-independent results, unlike a plain smoothing
+        convolution of dc alone (which is only a heuristic blur).
+        """
         numerator = fftconvolve(x * dc, self.filter_kernel, mode="same")
         denom = np.maximum(x, 1e-3) * self.filter_Hsum
         return numerator / denom
 
     def compute_self_weight_vector(self, x):
-        """Computes self-weight body force vector in -Z (N)."""
+        """Computes the design-dependent self-weight body-force vector (N), acting
+        in -Z, lumped equally across each element's 8 nodes and scaled linearly
+        with the current material density x_e (self-weight scales with the actual
+        material present, not the SIMP-interpolated stiffness — hence no penal_k
+        exponent here).
+
+        IMPORTANT CAVEAT: because this load depends on the design variable x, this
+        is technically a "design-dependent load" topology optimisation problem.
+        For tractability, this implementation does NOT add the corresponding extra
+        adjoint term (dF/dx) to the compliance sensitivity — only the stiffness
+        term dK/dx is differentiated, as in the standard SIMP formulation. This is
+        a common practical simplification: it is a reasonable approximation when
+        self-weight is secondary to the applied loads, but the sensitivity is not
+        fully consistent for problems where self-weight dominates the response.
+        """
         ndof = self.domain.ndof
         Fsw = np.zeros(ndof)
 
@@ -274,16 +299,27 @@ class TopologyOptimiser3DCompliance:
 
         vol_elem = self.domain.dx * self.domain.dy * self.domain.dz
         x_flat = x.flatten()
-        elem_weight_n = self.domain.gamma_n_mm3 * vol_elem * x_flat
-        node_weight_n = elem_weight_n / 8.0
+        elem_weight_n = self.domain.gamma_n_mm3 * vol_elem * x_flat  # N, per element
+        node_weight_n = elem_weight_n / 8.0  # lumped equally to the 8 element nodes
 
-        z_dofs = self.edof_vec[:, 2::3]
+        z_dofs = self.edof_vec[:, 2::3]  # (Nelem, 8) — z-DOF of each element's 8 nodes
         np.add.at(Fsw, z_dofs.flatten(), np.repeat(-node_weight_n, 8))
 
         return Fsw
 
     def compute_notension_penalty(self, U):
-        """Approximate Rankine sensitivity penalty for brittle materials."""
+        """Approximate Rankine-type no-tension sensitivity penalty for brittle /
+        no-tension materials (concrete, masonry, stone).
+
+        IMPORTANT CAVEAT: this is NOT a rigorous bi-modulus (tension/compression-
+        split) FE re-analysis. It evaluates the dominant signed principal stress
+        from the current isotropic, tension-capable linear-elastic solve, then adds
+        a positive term to the sensitivity field proportional to the tensile part
+        of that stress. In the OC update a positive addition to dc reduces (-dc),
+        which discourages — but does not strictly forbid — material accumulating
+        in net-tension zones. Treat this as design guidance, not a substitute for a
+        proper no-tension / cracked-section check on the resulting geometry.
+        """
         elem_stress = self.recover_element_stress_field(U)
         stress_grid = elem_stress.reshape(
             (self.domain.nx, self.domain.ny, self.domain.nz)
@@ -297,7 +333,9 @@ class TopologyOptimiser3DCompliance:
         return penalty
 
     def assemble_and_solve_static(self, x, include_self_weight=False):
-        """Assembles stiffness matrix and solves KU = F with CG verification & direct fallback."""
+        """Assembles global stiffness matrix and solves KU = F with CG convergence
+        verification (falling back to a direct solve on failure), optionally
+        adding the design-dependent self-weight load to F."""
         ndof = self.domain.ndof
         x_flat = x.flatten()
 
@@ -327,10 +365,11 @@ class TopologyOptimiser3DCompliance:
         ).tocsr()
 
         u_free, info = cg(
-            K_free, F_free, M=M, maxiter=3000, tol=1e-8
+            K_free, F_free, M=M, maxiter=3000, rtol=1e-5, atol=1e-8
         )
 
         if info != 0:
+            print(f"[Solver Warning]: SciPy CG solver failed to converge (info={info}). Falling back to spsolve direct solver.")
             u_free = spsolve(K_free, F_free)
 
         U = np.zeros(ndof)
