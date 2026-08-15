@@ -132,7 +132,8 @@
         });
 
         // --- 2. WebWorker Communication & State Management ---
-        const worker = new Worker('solver_worker.js?v=' + Date.now());
+        // Explicit timestamp cache-buster forces browser to download latest worker build
+        const worker = new Worker('solver_worker.js?cb=' + Date.now());
         const btnRun = document.getElementById('btn-run');
         const btnExport = document.getElementById('btn-export');
         const statusDiv = document.getElementById('status');
