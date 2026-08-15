@@ -6,27 +6,27 @@ async function initPyodideEngine() {
     try {
         pyodide = await loadPyodide();
         
-        // Load heavy numerical C-extensions into browser Wasm memory
+        // Load C-extensions into browser Wasm memory
         await pyodide.loadPackage(["numpy", "scipy", "scikit-image"]);
 
-        // Fetch Python source files over HTTP from GitHub Pages CDN
+        // Fetch Python files over HTTP directly from CDN
         const files = ["domain.py", "materials.py", "solvers.py"];
         const modules = {};
 
         for (const file of files) {
-            const response = await fetch(`./python_core/${file}?v=${Date.now()}`);
+            const response = await fetch(`./python_core/${file}?cache_bust=${Date.now()}`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status} fetching python_core/${file}`);
             }
             modules[file] = await response.text();
         }
 
-        // Create python_core module in Pyodide's native module registry
+        // Register modules directly into Pyodide in-memory module registry
         await pyodide.runPythonAsync(`
 import sys
 import types
 
-# Create in-memory package space
+# Create python_core package in sys.modules
 python_core = types.ModuleType("python_core")
 sys.modules["python_core"] = python_core
 
