@@ -23,10 +23,13 @@ async function initEngine() {
         // Ensure Virtual Filesystem directory structure exists in Pyodide RAM
         try { pyodide.FS.mkdir('/python_core'); } catch (e) { /* directory exists */ }
 
-        const coreFiles = ["__init__.py", "domain.py", "materials.py", "solvers.py"];
+        // Guarantee package entrypoint directly in MEMFS memory (completely bypasses HTTP fetch for __init__.py)
+        pyodide.FS.writeFile('/python_core/__init__.py', '"""DBSW Core Package"""');
+
+        const coreFiles = ["domain.py", "materials.py", "solvers.py"];
 
         for (const file of coreFiles) {
-            const response = await fetch(`./python_core/${file}?v=${Date.now()}`);
+            const response = await fetch(`./python_core/${file}?cb=${Date.now()}`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status} fetching python_core/${file}`);
             }
