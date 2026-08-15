@@ -364,9 +364,19 @@ class TopologyOptimiser3DCompliance:
             (1.0 / diag_K, (np.arange(len(free)), np.arange(len(free))))
         ).tocsr()
 
-        u_free, info = cg(
-            K_free, F_free, M=M, maxiter=3000, rtol=1e-5, atol=1e-8
-        )
+        # SciPy renamed cg()'s relative-tolerance kwarg from `tol` to `rtol` in
+        # 1.12. Pyodide's bundled SciPy (older than 1.12 as of this build) still
+        # only accepts `tol`, while newer SciPy installs (e.g. a local venv)
+        # require `rtol`. Try the current name first, fall back to the old one
+        # so this runs unmodified on either.
+        try:
+            u_free, info = cg(
+                K_free, F_free, M=M, maxiter=3000, rtol=1e-5, atol=1e-8
+            )
+        except TypeError:
+            u_free, info = cg(
+                K_free, F_free, M=M, maxiter=3000, tol=1e-5, atol=1e-8
+            )
 
         if info != 0:
             print(f"[Solver Warning]: SciPy CG solver failed to converge (info={info}). Falling back to spsolve direct solver.")
