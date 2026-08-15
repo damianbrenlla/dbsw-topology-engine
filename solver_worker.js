@@ -16,12 +16,12 @@ async function initEngine() {
         self.postMessage({ type: "STATUS", message: "Fetching Eurocode Python FEA modules..." });
 
         // Ensure Virtual Filesystem directory structure exists
-        try { pyodide.FS.mkdir('/python_core'); } catch (e) { /* directory already exists */ }
+        try { pyodide.FS.mkdir('/python_core'); } catch (e) { /* directory exists */ }
 
         const files = ["__init__.py", "domain.py", "materials.py", "solvers.py"];
 
         for (const file of files) {
-            const response = await fetch(`./python_core/${file}?v=${Date.now()}`);
+            const response = await fetch(`./python_core/${file}?cache_bust=${Date.now()}`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status} fetching python_core/${file}`);
             }
