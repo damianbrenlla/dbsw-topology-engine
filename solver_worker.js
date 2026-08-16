@@ -1,12 +1,24 @@
 /**
  * DBSW R260003 Topology Engine - Client-Side Pyodide WebWorker
  * Author: Damian Brenlla / DBSW 2026
+ *
+ * This mirrors the orchestration logic in the Flask app.py version (support
+ * presets/custom boxes, point supports, load presets/point loads, optional
+ * self-weight, approximate no-tension sensitivity penalty, penal_k
+ * continuation) but runs it inside Pyodide instead of a server process.
+ *
+ * The optimisation loop runs ONE ITERATION PER `await pyodide.runPythonAsync`
+ * call so the worker yields control back to the JS event loop after every
+ * iteration and can postMessage live progress — a single giant Python call
+ * blocks postMessage entirely until it finishes, which is what made earlier
+ * versions of this page look frozen.
  */
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
 
 let pyodide = null;
 
+// Mirrors PENAL_INIT / PENAL_FINAL / PENAL_STEP / NOTENSION_WEIGHT in app.py
 const PENAL_INIT = 1.0;
 const PENAL_FINAL = 3.0;
 const PENAL_STEP = 0.5;
@@ -80,7 +92,8 @@ self.onmessage = async function(e) {
             pyodide.globals.set("PENAL_STEP", PENAL_STEP);
             pyodide.globals.set("NOTENSION_WEIGHT", NOTENSION_WEIGHT);
 
-            // 1. Setup Material, Domain & Additive Boundary Conditions
+            // 1. ONE-OFF SETUP: material, domain, supports, loads, optimiser instance.
+            // Mirrors sections 1-5 of async_optimise_worker() in app.py.
             await pyodide.runPythonAsync(`
 t0 = time.time()
 payload = json.loads(payload_json)
@@ -102,6 +115,9 @@ sup_preset = payload.get("support_preset", "cantilever")
 if sup_mode == "preset":
     if sup_preset == "cantilever":
         domain.add_support_box([0.0, 0.0], [0.0, domain.Ly], [0.0, domain.Lz], dofs="xyz")
+    elif sup_preset == "simply_supported":
+        domain.add_support_box([0.0, 0.0], [0.0, domain.Ly], [0.0, 0.0], dofs="xyz")
+        domain.add_support_box([domain.Lx, domain.Lx], [0.0, domain.Ly], [0.0, 0.0], dofs="yz")
     elif sup_preset == "four_corners":
         domain.add_support_box([0.0, 0.0], [0.0, 0.0], [0.0, 0.0], dofs="xyz")
         domain.add_support_box([domain.Lx, domain.Lx], [0.0, 0.0], [0.0, 0.0], dofs="xyz")
@@ -113,7 +129,6 @@ else:
     z_b = [float(payload.get("sup_z_min", 0)), float(payload.get("sup_z_max", domain.Lz))]
     domain.add_support_box(x_b, y_b, z_b, dofs=payload.get("sup_dofs", "xyz"))
 
-# Unconditional Additive Processing of Discrete Point Supports
 for ps in payload.get("point_supports", []):
     r = 15.0
     px, py, pz = float(ps["x"]), float(ps["y"]), float(ps["z"])
@@ -141,7 +156,7 @@ else:
             domain.add_point_load([px, py, pz], [fx, fy, fz])
 
 # --- Optimiser Setup ---
-volfrac = float(payload.get("volfrac", 0.90))
+volfrac = float(payload.get("volfrac", 0.20))
 sim_iterations = int(payload.get("iterations", 15))
 include_self_weight = bool(payload.get("include_self_weight", True))
 is_notension_material = domain.material_type in ("concrete", "masonry", "stone")
@@ -155,7 +170,8 @@ n_stages = int(round((PENAL_FINAL - PENAL_INIT) / PENAL_STEP)) + 1
 continuation_interval = max(1, sim_iterations // n_stages)
             `);
 
-            // 2. SIMP Optimization Iteration Loop
+            // 2. ONE SIMP ITERATION PER AWAIT — yields control back to JS each time
+            // so progress can actually reach the page. Mirrors section 6 of app.py.
             for (let i = 0; i < iterations; i++) {
                 pyodide.globals.set("i", i);
                 const t0 = performance.now();
@@ -203,7 +219,8 @@ opt.x = xnew
 
             postMessage({ status: "running", current_iter: iterations, total_iter: iterations, phase: "Extracting mesh & recovering fields" });
 
-            // 3. Final Mesh Isosurface Extraction & Field Recovery
+            // 3. Final solve on x_final + mesh extraction + stress/displacement field
+            // recovery. Mirrors section 7 of app.py.
             const resultJson = await pyodide.runPythonAsync(`
 U_final, K_final, _ = opt.assemble_and_solve_static(opt.x, include_self_weight=include_self_weight)
 
