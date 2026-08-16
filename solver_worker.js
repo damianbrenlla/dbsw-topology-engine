@@ -12,6 +12,13 @@
  * iteration and can postMessage live progress — a single giant Python call
  * blocks postMessage entirely until it finishes, which is what made earlier
  * versions of this page look frozen.
+ *
+ * FIX (2026): Removed the silent "no loads defined -> apply a default
+ * -100kN tip load" fallback. That fallback meant deleting every row in the
+ * custom load table did NOT give you a zero-load model — it silently
+ * substituted a synthetic demo load, so stress/deflection maps kept showing
+ * non-zero results even with self-weight switched off. An empty load array
+ * now correctly means zero external load.
  */
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
@@ -123,6 +130,15 @@ if sup_mode == "preset":
         domain.add_support_box([domain.Lx, domain.Lx], [0.0, 0.0], [0.0, 0.0], dofs="xyz")
         domain.add_support_box([0.0, 0.0], [domain.Ly, domain.Ly], [0.0, 0.0], dofs="xyz")
         domain.add_support_box([domain.Lx, domain.Lx], [domain.Ly, domain.Ly], [0.0, 0.0], dofs="xyz")
+    elif sup_preset == "all_edges":
+        # All Bottom Edges Supported: restrains a thin band along the full
+        # perimeter of the Z=0 (bottom) face, like a simply-supported slab
+        # bearing on walls along all four sides.
+        edge_t = max(domain.dx, domain.dy, domain.dz) * 1.5
+        domain.add_support_box([0.0, domain.Lx], [0.0, edge_t], [0.0, 0.0], dofs="xyz")
+        domain.add_support_box([0.0, domain.Lx], [domain.Ly - edge_t, domain.Ly], [0.0, 0.0], dofs="xyz")
+        domain.add_support_box([0.0, edge_t], [0.0, domain.Ly], [0.0, 0.0], dofs="xyz")
+        domain.add_support_box([domain.Lx - edge_t, domain.Lx], [0.0, domain.Ly], [0.0, 0.0], dofs="xyz")
 else:
     x_b = [float(payload.get("sup_x_min", 0)), float(payload.get("sup_x_max", 0))]
     y_b = [float(payload.get("sup_y_min", 0)), float(payload.get("sup_y_max", domain.Ly))]
@@ -144,16 +160,18 @@ if load_preset == "top_udl":
         total_load_xyz=[0.0, 0.0, -100000.0],
     )
 else:
-    loads = payload.get("loads", [])
-    if len(loads) == 0:
-        domain.add_point_load([domain.Lx, domain.Ly / 2.0, domain.Lz], [0.0, 0.0, -100000.0])
-    else:
-        for ld in loads:
-            px, py, pz = float(ld["x"]), float(ld["y"]), float(ld["z"])
-            fx = float(ld.get("Fx", 0.0)) * 1000.0
-            fy = float(ld.get("Fy", 0.0)) * 1000.0
-            fz = float(ld.get("Fz", -100.0)) * 1000.0
-            domain.add_point_load([px, py, pz], [fx, fy, fz])
+    # FIX: an empty load array is a valid, intentional zero-load case
+    # (e.g. testing self-weight-only behaviour). No synthetic fallback load
+    # is injected here any more — previously this silently added a
+    # -100kN tip load whenever the table was emptied, which is why
+    # stress/deflection maps kept showing non-zero results even with
+    # self-weight switched off.
+    for ld in payload.get("loads", []):
+        px, py, pz = float(ld["x"]), float(ld["y"]), float(ld["z"])
+        fx = float(ld.get("Fx", 0.0)) * 1000.0
+        fy = float(ld.get("Fy", 0.0)) * 1000.0
+        fz = float(ld.get("Fz", -100.0)) * 1000.0
+        domain.add_point_load([px, py, pz], [fx, fy, fz])
 
 # --- Optimiser Setup ---
 volfrac = float(payload.get("volfrac", 0.20))
