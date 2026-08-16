@@ -114,6 +114,16 @@
         }
         .btn-secondary:hover { background: #f5f5f5; }
         .btn-secondary:disabled { color: #999999; border-color: #cccccc; cursor: not-allowed; }
+        .btn-secondary-danger {
+            background: #ffffff; color: #cc0000; border: 1px solid #cc0000;
+            padding: 8px; border-radius: 0px;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px;
+            text-transform: uppercase; cursor: pointer; transition: background 0.15s ease;
+        }
+        .btn-secondary-danger:hover { background: #cc0000; color: #ffffff; }
+        .load-header-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+        .load-header-row .btn-group { display: flex; gap: 6px; }
         #status { font-size: 0.78rem; color: #000000; font-weight: 500; word-break: break-word; padding: 8px; background: #f9f9f9; border-left: 2px solid #000000; white-space: pre-line; }
         hr { border: 0; border-top: 1px solid #e5e5e5; margin: 2px 0; }
         .section-header { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #000000; }
@@ -298,6 +308,7 @@
         <select id="support_preset" onchange="updateDomainVisuals()">
             <option value="cantilever">Cantilever Wall (X = 0 mm, Fixed Face)</option>
             <option value="four_corners">Four Corners</option>
+            <option value="all_edges">All Bottom Edges Supported (Slab on Perimeter)</option>
         </select>
     </div>
 
@@ -355,14 +366,23 @@
     </div>
 
     <div id="point_loads_container" class="control-group">
-        <label style="display: flex; justify-content: space-between; align-items: center;">
-            Point Load Array (mm / kN)
-            <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addLoadRow()">+ Add Load</button>
-        </label>
+        <div class="load-header-row">
+            <label style="margin: 0;">Point Load Array (mm / kN)</label>
+            <div class="btn-group">
+                <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addLoadRow()">+ Add Load</button>
+                <button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllLoads()">Clear All Loads</button>
+            </div>
+        </div>
         <table class="data-table">
             <thead><tr><th>X</th><th>Y</th><th>Z</th><th>Fx</th><th>Fy</th><th>Fz</th><th></th></tr></thead>
             <tbody id="load_table_body"></tbody>
         </table>
+        <p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 4px 0 0 0;">
+            An empty table means zero external load. If self-weight is also
+            switched off below, the solver correctly returns a flat,
+            zero-stress result — that's the expected physical answer for an
+            unloaded body, not a bug.
+        </p>
     </div>
 
     <hr>
@@ -652,6 +672,19 @@
         updateDomainVisuals();
     }
 
+    // NEW: clears every row from the load table in one click. Combined with
+    // the solver_worker.js fix, this now genuinely means "solve with zero
+    // external load" rather than triggering a hidden default load.
+    function clearAllLoads() {
+        var tbody = document.getElementById('load_table_body');
+        tbody.innerHTML = '';
+        // Switch the preset dropdown to "Custom" so it's clear the table
+        // is being manually managed rather than about to be repopulated by
+        // a preset the next time something else changes.
+        document.getElementById('load_preset').value = 'custom';
+        updateDomainVisuals();
+    }
+
     function applyLoadPreset() {
         var preset = document.getElementById('load_preset').value;
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
@@ -755,6 +788,31 @@
                     scene.add(cMesh);
                     supportGizmos.push(cMesh);
                 });
+
+            } else if (preset === 'all_edges') {
+                // All Bottom Edges Supported: thin restraint bars traced
+                // along the full perimeter of the Z = 0 face, mirroring the
+                // Python-side add_support_box calls in solver_worker.js.
+                var edgeT = Math.max(size * 0.28, Math.min(Lx, Ly) * 0.02);
+                var edgeH = size * 0.35;
+                var edgeGeoX = new THREE.BoxGeometry(Lx, edgeH, edgeT);
+                var edgeGeoY = new THREE.BoxGeometry(edgeT, edgeH, Ly);
+
+                var edgeFront = new THREE.Mesh(edgeGeoX, pinMat);
+                edgeFront.position.set(Lx / 2.0, -edgeH * 0.4, edgeT / 2.0);
+                scene.add(edgeFront); supportGizmos.push(edgeFront);
+
+                var edgeBack = new THREE.Mesh(edgeGeoX, pinMat);
+                edgeBack.position.set(Lx / 2.0, -edgeH * 0.4, Ly - edgeT / 2.0);
+                scene.add(edgeBack); supportGizmos.push(edgeBack);
+
+                var edgeLeft = new THREE.Mesh(edgeGeoY, pinMat);
+                edgeLeft.position.set(edgeT / 2.0, -edgeH * 0.4, Ly / 2.0);
+                scene.add(edgeLeft); supportGizmos.push(edgeLeft);
+
+                var edgeRight = new THREE.Mesh(edgeGeoY, pinMat);
+                edgeRight.position.set(Lx - edgeT / 2.0, -edgeH * 0.4, Ly / 2.0);
+                scene.add(edgeRight); supportGizmos.push(edgeRight);
             }
         }
 
