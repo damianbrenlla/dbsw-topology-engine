@@ -115,6 +115,26 @@ domain = Domain3D(
     gamma_kn_m3=mat_props.get("gamma_kn_m3", 0.0),
 )
 
+# --- Void / Forced-Solid Passive Regions ---
+# Writes directly into domain.passive_mask, the same array the SIMP update
+# step already checks every iteration (see the xnew[domain.passive_mask...]
+# lines further down). A region tagged "void" pins those elements to near-
+# zero density; "solid" pins them fully solid — either way the optimiser is
+# no longer free to choose for those elements, regardless of load path.
+void_regions = payload.get("void_regions", [])
+if void_regions:
+    _rx = (np.arange(domain.nx) + 0.5) * domain.dx
+    _ry = (np.arange(domain.ny) + 0.5) * domain.dy
+    _rz = (np.arange(domain.nz) + 0.5) * domain.dz
+    _RX, _RY, _RZ = np.meshgrid(_rx, _ry, _rz, indexing="ij")
+    for region in void_regions:
+        _region_mask = (
+            (_RX >= float(region["x_min"])) & (_RX <= float(region["x_max"])) &
+            (_RY >= float(region["y_min"])) & (_RY <= float(region["y_max"])) &
+            (_RZ >= float(region["z_min"])) & (_RZ <= float(region["z_max"]))
+        )
+        domain.passive_mask[_region_mask] = 1.0 if region.get("region_type", "void") == "solid" else 0.0
+
 # --- Boundary Support Restraints ---
 sup_mode = payload.get("support_mode", "preset")
 sup_preset = payload.get("support_preset", "cantilever")
