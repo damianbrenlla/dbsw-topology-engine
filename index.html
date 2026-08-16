@@ -13,6 +13,8 @@
             display: flex; height: 100vh; overflow: hidden;
             -webkit-font-smoothing: antialiased;
         }
+        
+        /* DBSW Custom Minimalist Scrollbar Palette */
         #sidebar::-webkit-scrollbar {
             width: 6px;
         }
@@ -707,7 +709,7 @@
         return supports;
     }
 
-    /* Universal 3D Kinematic Support Visualiser */
+    /* Universal 3D Support Visualiser (Presets, Custom Bounding Boxes & Point Support Table) */
     function updateDomainVisuals() {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
