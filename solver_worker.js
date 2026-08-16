@@ -139,11 +139,15 @@ if sup_mode == "preset":
         domain.add_support_box([0.0, domain.Lx], [domain.Ly - edge_t, domain.Ly], [0.0, 0.0], dofs="xyz")
         domain.add_support_box([0.0, edge_t], [0.0, domain.Ly], [0.0, 0.0], dofs="xyz")
         domain.add_support_box([domain.Lx - edge_t, domain.Lx], [0.0, domain.Ly], [0.0, 0.0], dofs="xyz")
-else:
+elif sup_mode == "custom":
     x_b = [float(payload.get("sup_x_min", 0)), float(payload.get("sup_x_max", 0))]
     y_b = [float(payload.get("sup_y_min", 0)), float(payload.get("sup_y_max", domain.Ly))]
     z_b = [float(payload.get("sup_z_min", 0)), float(payload.get("sup_z_max", domain.Lz))]
     domain.add_support_box(x_b, y_b, z_b, dofs=payload.get("sup_dofs", "xyz"))
+# else sup_mode == "points_only": intentionally no preset or bounding-box
+# restraint is added here. Restraint comes ENTIRELY from the point_supports
+# loop below, so the discrete support table has to be sufficient on its own
+# to prevent rigid-body motion.
 
 for ps in payload.get("point_supports", []):
     r = 15.0
