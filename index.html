@@ -300,6 +300,7 @@
         <select id="support_mode" onchange="toggleSupportMode()">
             <option value="preset">Preset Configurations</option>
             <option value="custom">Arbitrary Spatial Bounding Box</option>
+            <option value="points_only">Only User-Selected Discrete Points</option>
         </select>
     </div>
 
@@ -353,6 +354,13 @@
             <thead><tr><th>X</th><th>Y</th><th>Z</th><th>DOFs</th><th></th></tr></thead>
             <tbody id="support_table_body"></tbody>
         </table>
+        <p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 4px 0 0 0;">
+            With Support Mode set to "Only User-Selected Discrete Points"
+            above, these rows are the <em>only</em> restraint the model has —
+            the preset and bounding-box restraints are ignored entirely. Make
+            sure enough nodes are restrained across enough DOFs to prevent
+            rigid-body motion, or the solve will fail or return nonsense.
+        </p>
     </div>
 
     <hr>
@@ -632,7 +640,7 @@
 
     function toggleSupportMode() {
         var mode = document.getElementById('support_mode').value;
-        document.getElementById('preset_supports_div').style.display = (mode === 'custom') ? 'none' : 'flex';
+        document.getElementById('preset_supports_div').style.display = (mode === 'preset') ? 'flex' : 'none';
         document.getElementById('custom_supports_div').style.display = (mode === 'custom') ? 'flex' : 'none';
         updateDomainVisuals();
     }
