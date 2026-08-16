@@ -342,10 +342,13 @@
     </div>
 
     <div class="control-group" style="margin-top: 4px;">
-        <label style="display: flex; justify-content: space-between; align-items: center;">
-            Discrete Point Supports (mm / DOFs)
-            <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addSupportRow()">+ Add Support Node</button>
-        </label>
+        <div class="load-header-row">
+            <label style="margin: 0;">Discrete Point Supports (mm / DOFs)</label>
+            <div class="btn-group">
+                <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addSupportRow()">+ Add Support Node</button>
+                <button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllSupports()">Clear All Supports</button>
+            </div>
+        </div>
         <table class="data-table">
             <thead><tr><th>X</th><th>Y</th><th>Z</th><th>DOFs</th><th></th></tr></thead>
             <tbody id="support_table_body"></tbody>
@@ -669,6 +672,17 @@
     function deleteRow(btn) {
         var row = btn.parentNode.parentNode;
         row.parentNode.removeChild(row);
+        updateDomainVisuals();
+    }
+
+    // NEW: clears every row from the discrete point supports table in one
+    // click. This only affects the point-support table — it does not touch
+    // the separate Support Preset (cantilever / four corners / all edges)
+    // or the Custom Bounding Box restraint, which are independent
+    // restraint mechanisms defined above.
+    function clearAllSupports() {
+        var tbody = document.getElementById('support_table_body');
+        tbody.innerHTML = '';
         updateDomainVisuals();
     }
 
