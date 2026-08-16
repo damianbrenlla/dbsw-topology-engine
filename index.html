@@ -193,7 +193,8 @@
 
         <ul>
             <li>Six Eurocode material classes (steel, concrete, timber, masonry, stone, custom isotropic)</li>
-            <li>Configurable domain geometry, FE mesh, supports (preset or arbitrary), and point/patch loads</li>
+            <li>Configurable domain geometry, FE mesh, supports (preset, arbitrary, or discrete points only), and point/patch loads</li>
+            <li>Void keep-out and forced-solid passive regions to constrain the optimiser directly</li>
             <li>Optional self-weight (dead load) inclusion</li>
             <li>Signed stress (tension/compression) and displacement field visualisation with interactive section cut-planes</li>
             <li>Direct .STL export of the optimised geometry</li>
@@ -397,6 +398,33 @@
     </div>
 
     <hr>
+    <div class="section-header">Void / Passive Material Regions</div>
+    <div id="void_regions_container" class="control-group">
+        <div class="load-header-row">
+            <label style="margin: 0;">Keep-Out / Forced-Solid Boxes (mm)</label>
+            <div class="btn-group">
+                <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addVoidRegionRow()">+ Add Region</button>
+                <button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllVoidRegions()">Clear All Regions</button>
+            </div>
+        </div>
+        <table class="data-table">
+            <thead><tr><th>X Min</th><th>X Max</th><th>Y Min</th><th>Y Max</th><th>Z Min</th><th>Z Max</th><th>Type</th><th></th></tr></thead>
+            <tbody id="void_region_table_body"></tbody>
+        </table>
+        <p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 4px 0 0 0;">
+            "Void" forces every element inside the box to stay empty
+            regardless of what the optimiser would otherwise choose — useful
+            for service penetrations, ducts, or a doorway the topology has to
+            route around. "Forced Solid" pins material in place instead —
+            useful for a bearing pad or a fixing zone that must never be
+            hollowed out. Overlapping a region with a load or support point
+            can produce a physically meaningless model (e.g. a load applied
+            into thin air), so keep regions clear of your load/support
+            coordinates.
+        </p>
+    </div>
+
+    <hr>
     <div class="control-group">
         <label>Volume Fraction & Max Iterations</label>
         <div style="display: flex; gap: 6px;">
@@ -470,6 +498,7 @@
     var domainBox, supportBoxVisual;
     var forceArrows = [];
     var supportGizmos = [];
+    var voidRegionGizmos = [];
     var currentVertices = [], currentFaces = [], currentStressesMPa = [], currentDeflectionsMM = [];
     
     // Explicit Asymmetric Stress Bounds Tracking
@@ -707,6 +736,63 @@
         updateDomainVisuals();
     }
 
+    // NEW: Void / Forced-Solid passive region row management. These map
+    // directly onto domain.passive_mask in solver_worker.js — "void" pins
+    // an element's density to ~0, "solid" pins it to 1, overriding whatever
+    // the SIMP optimiser would otherwise choose for that region.
+    function addVoidRegionRow(xMin, xMax, yMin, yMax, zMin, zMax, regionType) {
+        var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
+        var Ly = parseFloat(document.getElementById('Ly').value) || 300;
+        var Lz = parseFloat(document.getElementById('Lz').value) || 600;
+        xMin = (xMin === undefined) ? Lx * 0.4 : xMin;
+        xMax = (xMax === undefined) ? Lx * 0.6 : xMax;
+        yMin = (yMin === undefined) ? 0 : yMin;
+        yMax = (yMax === undefined) ? Ly : yMax;
+        zMin = (zMin === undefined) ? 0 : zMin;
+        zMax = (zMax === undefined) ? Lz * 0.3 : zMax;
+        regionType = (regionType === undefined) ? 'void' : regionType;
+
+        var tbody = document.getElementById('void_region_table_body');
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+            '<td><input type="number" class="vr-xmin" value="' + xMin + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><input type="number" class="vr-xmax" value="' + xMax + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><input type="number" class="vr-ymin" value="' + yMin + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><input type="number" class="vr-ymax" value="' + yMax + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><input type="number" class="vr-zmin" value="' + zMin + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><input type="number" class="vr-zmax" value="' + zMax + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><select class="vr-type" onchange="updateDomainVisuals()">' +
+                '<option value="void"' + (regionType === 'void' ? ' selected' : '') + '>Void</option>' +
+                '<option value="solid"' + (regionType === 'solid' ? ' selected' : '') + '>Forced Solid</option>' +
+            '</select></td>' +
+            '<td><button class="btn-del" onclick="deleteRow(this)">×</button></td>';
+        tbody.appendChild(tr);
+        updateDomainVisuals();
+    }
+
+    function clearAllVoidRegions() {
+        var tbody = document.getElementById('void_region_table_body');
+        tbody.innerHTML = '';
+        updateDomainVisuals();
+    }
+
+    function getVoidRegionArrayData() {
+        var rows = document.querySelectorAll('#void_region_table_body tr');
+        var regions = [];
+        rows.forEach(function(r) {
+            regions.push({
+                x_min: parseFloat(r.querySelector('.vr-xmin').value) || 0,
+                x_max: parseFloat(r.querySelector('.vr-xmax').value) || 0,
+                y_min: parseFloat(r.querySelector('.vr-ymin').value) || 0,
+                y_max: parseFloat(r.querySelector('.vr-ymax').value) || 0,
+                z_min: parseFloat(r.querySelector('.vr-zmin').value) || 0,
+                z_max: parseFloat(r.querySelector('.vr-zmax').value) || 0,
+                region_type: r.querySelector('.vr-type').value || 'void'
+            });
+        });
+        return regions;
+    }
+
     function applyLoadPreset() {
         var preset = document.getElementById('load_preset').value;
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
@@ -895,6 +981,40 @@
                 forceArrows.push(arrow);
             }
         });
+
+        // --- 5. Render Void / Forced-Solid Passive Region Boxes ---
+        // Deliberately distinct colours from supports (emerald/coral) and
+        // loads (red arrows): amber/translucent for Void keep-outs, blue/
+        // translucent for Forced Solid zones, so all three restraint types
+        // stay visually unambiguous at a glance.
+        voidRegionGizmos.forEach(function(g) { scene.remove(g); });
+        voidRegionGizmos = [];
+        var voidFillMat = new THREE.MeshStandardMaterial({
+            color: 0xff9900, roughness: 0.6, transparent: true, opacity: 0.28,
+            side: THREE.DoubleSide, depthWrite: false
+        });
+        var solidFillMat = new THREE.MeshStandardMaterial({
+            color: 0x2255ee, roughness: 0.6, transparent: true, opacity: 0.28,
+            side: THREE.DoubleSide, depthWrite: false
+        });
+        getVoidRegionArrayData().forEach(function(vr) {
+            var dx = Math.max(vr.x_max - vr.x_min, 1.0);
+            var dy = Math.max(vr.y_max - vr.y_min, 1.0);
+            var dz = Math.max(vr.z_max - vr.z_min, 1.0);
+            var regGeo = new THREE.BoxGeometry(dx, dz, dy);
+            var fillMat = (vr.region_type === 'solid') ? solidFillMat : voidFillMat;
+            var regMesh = new THREE.Mesh(regGeo, fillMat);
+            regMesh.position.set(vr.x_min + dx / 2.0, vr.z_min + dz / 2.0, vr.y_min + dy / 2.0);
+            scene.add(regMesh);
+            voidRegionGizmos.push(regMesh);
+
+            var regEdges = new THREE.EdgesGeometry(regGeo);
+            var edgeColor = (vr.region_type === 'solid') ? 0x2255ee : 0xcc6600;
+            var regWire = new THREE.LineSegments(regEdges, new THREE.LineBasicMaterial({ color: edgeColor }));
+            regWire.position.copy(regMesh.position);
+            scene.add(regWire);
+            voidRegionGizmos.push(regWire);
+        });
     }
 
     function initWasmEngine() {
@@ -1009,6 +1129,7 @@
             point_supports: getPointSupportArrayData(),
             load_preset: document.getElementById('load_preset').value,
             loads: getLoadArrayData(),
+            void_regions: getVoidRegionArrayData(),
             iterations: parseInt(document.getElementById('iterations').value),
             include_self_weight: document.getElementById('self_weight_toggle').checked
         };
