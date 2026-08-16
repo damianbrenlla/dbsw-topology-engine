@@ -13,6 +13,38 @@
             display: flex; height: 100vh; overflow: hidden;
             -webkit-font-smoothing: antialiased;
         }
+        
+        /* DBSW Custom Minimalist Scrollbar Palette */
+        #sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+        #sidebar::-webkit-scrollbar-track {
+            background: #ffffff;
+            border-left: 1px solid #e5e5e5;
+        }
+        #sidebar::-webkit-scrollbar-thumb {
+            background: #000000;
+            border-radius: 0px;
+        }
+        #sidebar::-webkit-scrollbar-thumb:hover {
+            background: #333333;
+        }
+        #sidebar::-webkit-scrollbar-button:single-button {
+            background-color: #ffffff;
+            display: block;
+            border-style: solid;
+            height: 10px;
+            width: 6px;
+        }
+        #sidebar::-webkit-scrollbar-button:single-button:vertical:decrement {
+            border-width: 0 3px 5px 3px;
+            border-color: transparent transparent #000000 transparent;
+        }
+        #sidebar::-webkit-scrollbar-button:single-button:vertical:increment {
+            border-width: 5px 3px 0 3px;
+            border-color: #000000 transparent transparent transparent;
+        }
+
         #sidebar {
             width: 420px; background: #ffffff; padding: 24px;
             border-right: 1px solid #e5e5e5; display: flex;
@@ -30,6 +62,45 @@
             font-size: 0.78rem; outline: none; transition: border-color 0.15s ease;
         }
         input:focus, select:focus { border-color: #000000; }
+
+        /* Guarantees 1:1 Aspect Ratio Square Checkbox */
+        input[type="checkbox"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px !important;
+            height: 14px !important;
+            min-width: 14px !important;
+            min-height: 14px !important;
+            max-width: 14px !important;
+            max-height: 14px !important;
+            aspect-ratio: 1 / 1 !important;
+            flex-shrink: 0 !important;
+            background: #ffffff;
+            border: 1px solid #000000;
+            border-radius: 0px;
+            cursor: pointer;
+            outline: none;
+            position: relative;
+            margin: 0 6px 0 0;
+            vertical-align: middle;
+            display: inline-block;
+            line-height: 0;
+        }
+        input[type="checkbox"]:checked {
+            background: #000000;
+            border-color: #000000;
+        }
+        input[type="checkbox"]:checked::after {
+            content: '';
+            position: absolute;
+            left: 4px;
+            top: 1px;
+            width: 3px;
+            height: 6px;
+            border: solid #ffffff;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+        }
 
         input[type="range"] {
             -webkit-appearance: none;
@@ -86,8 +157,7 @@
         hr { border: 0; border-top: 1px solid #e5e5e5; margin: 2px 0; }
         .section-header { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #000000; }
         .checkbox-group { display: flex; gap: 12px; align-items: center; font-size: 0.78rem; }
-        .checkbox-group label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-        input[type="checkbox"] { accent-color: #000000; }
+        .checkbox-group label { display: flex; align-items: center; cursor: pointer; color: #000000; font-weight: 500; }
         .data-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; margin-top: 4px; }
         .data-table th { text-align: left; background: #f5f5f5; padding: 4px 6px; border: 1px solid #e5e5e5; font-weight: 600; }
         .data-table td { padding: 2px; border: 1px solid #e5e5e5; }
@@ -181,8 +251,8 @@
     <div class="control-group">
         <label>Structural Material Classification</label>
         <select id="mat_type" onchange="updateMaterialUI()">
+            <option value="concrete" selected>Reinforced Concrete — BS EN 1992-1-1 (EC2)</option>
             <option value="steel">Structural Steel — BS EN 1993-1-1 (EC3)</option>
-            <option value="concrete">Reinforced Concrete — BS EN 1992-1-1 (EC2)</option>
             <option value="timber">Timber / Glulam — BS EN 1995-1-1 (EC5)</option>
             <option value="masonry">Structural Masonry — BS EN 1996-1-1 (EC6)</option>
             <option value="stone">Natural Stone Masonry — BS EN 1996-1-1</option>
@@ -216,19 +286,19 @@
     <div id="mat_generic_div" style="display: none; flex-direction: column; gap: 6px;">
         <div class="control-group">
             <label>Young's Modulus E (MPa)</label>
-            <input type="number" id="custom_E" value="210000">
+            <input type="number" id="custom_E" value="33000">
         </div>
         <div class="control-group">
             <label>Poisson's Ratio ν</label>
-            <input type="number" step="0.01" id="custom_nu" value="0.30">
+            <input type="number" step="0.01" id="custom_nu" value="0.20">
         </div>
         <div class="control-group">
             <label>Characteristic Design Yield Strength fk (MPa)</label>
-            <input type="number" id="custom_fk" value="355">
+            <input type="number" id="custom_fk" value="30">
         </div>
         <div class="control-group">
             <label>Unit Weight γ (kN/m³) — 0 disables self-weight</label>
-            <input type="number" step="0.1" id="custom_gamma" value="0">
+            <input type="number" step="0.1" id="custom_gamma" value="25.0">
         </div>
     </div>
 
@@ -263,10 +333,9 @@
 
     <div id="preset_supports_div" class="control-group">
         <label>Support Presets</label>
-        <select id="support_preset">
-            <option value="simply_supported">Simply Supported Ends (X = 0 & X = Lx)</option>
+        <select id="support_preset" onchange="updateDomainVisuals()">
             <option value="cantilever">Cantilever Wall (X = 0 mm, Fixed Face)</option>
-            <option value="four_corners">Four Corner Columns (Bottom Z = 0)</option>
+            <option value="four_corners">Four Corners</option>
         </select>
     </div>
 
@@ -338,17 +407,17 @@
     <div class="control-group">
         <label>Volume Fraction & Max Iterations</label>
         <div style="display: flex; gap: 6px;">
-            <input type="number" step="0.05" id="volfrac" value="0.20" style="width: 50%;">
+            <input type="number" step="0.05" id="volfrac" value="0.90" min="0.05" max="1.00" style="width: 50%;">
             <input type="number" id="iterations" value="20" style="width: 50%;">
         </div>
         <p style="font-size: 0.70rem; color: #888888; line-height: 1.45; margin: 4px 0 0 0;">
             Volume fraction sets the target proportion of the domain kept as solid
-            material (0.20 = 20% by volume). Iterations sets how many SIMP
+            material (0.90 = 90% by volume). Iterations sets how many SIMP
             optimisation passes run — more iterations generally converge to a
             cleaner, more resolved topology at the cost of longer solve time.
         </p>
     </div>
-    <div class="checkbox-group" style="margin-top: 2px;">
+    <div class="checkbox-group" style="margin-top: 4px;">
         <label>
             <input type="checkbox" id="self_weight_toggle" checked>
             Include Self-Weight (Dead Load)
@@ -407,10 +476,13 @@
     var scene, camera, renderer, controls, mesh;
     var domainBox, supportBoxVisual;
     var forceArrows = [];
-    var supportSpheres = [];
+    var supportGizmos = [];
     var currentVertices = [], currentFaces = [], currentStressesMPa = [], currentDeflectionsMM = [];
-    var currentSigmaMaxAbs = 1.0, currentSigmaMaxTens = 1.0, currentSigmaMaxComp = -1.0;
-    var currentUMax = 1.0, currentFk = 355.0;
+    
+    // Explicit Asymmetric Stress Bounds Tracking
+    var currentSigmaMaxTens = 1.0;  // Maximum Tensile Stress (+MPa)
+    var currentSigmaMaxComp = -1.0; // Maximum Compressive Stress (-MPa, negative)
+    var currentUMax = 1.0, currentFk = 30.0;
     var worker = null;
     var engineReady = false;
 
@@ -448,13 +520,13 @@
             stdDiv.style.display = 'flex';
             var gradeSelect = document.getElementById('mat_grade');
             gradeSelect.innerHTML = '';
-            var list = (matType === 'steel') ? STEEL_GRADES : (matType === 'concrete' ? CONCRETE_GRADES : TIMBER_GRADES);
+            var list = (matType === 'concrete') ? CONCRETE_GRADES : ((matType === 'steel') ? STEEL_GRADES : TIMBER_GRADES);
             list.forEach(function(g) {
                 var opt = document.createElement('option');
                 opt.value = g; opt.innerText = g;
                 gradeSelect.appendChild(opt);
             });
-            gradeSelect.value = (matType === 'steel') ? 'S355' : (matType === 'concrete' ? 'C30/37' : 'C24');
+            gradeSelect.value = (matType === 'concrete') ? 'C30/37' : ((matType === 'steel') ? 'S355' : 'C24');
         } else if (matType === 'masonry' || matType === 'stone') {
             masDiv.style.display = 'flex';
             var uSelect = document.getElementById('masonry_unit_select');
@@ -546,6 +618,14 @@
 
         window.addEventListener('resize', onWindowResize);
         updateMaterialUI();
+
+        // Add default pin/roller supports to Discrete Table for initial simple span baseline
+        var tbody = document.getElementById('support_table_body');
+        if (tbody && tbody.children.length === 0) {
+            addSupportRow(0, 150, 0, 'xyz');
+            addSupportRow(6000, 150, 0, 'yz');
+        }
+
         applyLoadPreset();
         setupCutPlaneSliders();
         animate();
@@ -661,12 +741,13 @@
                 x: parseFloat(r.querySelector('.sp-x').value) || 0,
                 y: parseFloat(r.querySelector('.sp-y').value) || 0,
                 z: parseFloat(r.querySelector('.sp-z').value) || 0,
-                dofs: r.querySelector('.sp-dofs').value || 'xyz'
+                dofs: (r.querySelector('.sp-dofs').value || 'xyz').toLowerCase()
             });
         });
         return supports;
     }
 
+    /* Universal 3D Support Visualiser (Presets, Custom Bounding Boxes & Point Support Table) */
     function updateDomainVisuals() {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -679,34 +760,85 @@
         domainBox.position.set(Lx / 2.0, Lz / 2.0, Ly / 2.0);
         scene.add(domainBox);
 
+        // Clear existing support gizmos
+        supportGizmos.forEach(function(g) { scene.remove(g); });
+        supportGizmos = [];
+
+        var size = Math.max(120, Lz * 0.22);
+        var supMode = document.getElementById('support_mode').value;
+
+        // Shared Materials for Kinematic Primitives
+        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 }); // Emerald Green (Fixed/Pin XYZ)
+        var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 }); // Coral Red (Roller YZ)
+
+        // --- 1. Preset Supports Rendering ---
+        if (supMode === 'preset') {
+            var preset = document.getElementById('support_preset').value;
+            
+            if (preset === 'cantilever') {
+                // Fixed Cantilever Wall Face (X = 0 mm)
+                var wallGeo = new THREE.BoxGeometry(size * 0.4, Lz, Ly);
+                var wallMesh = new THREE.Mesh(wallGeo, pinMat);
+                wallMesh.position.set(-size * 0.2, Lz / 2.0, Ly / 2.0);
+                scene.add(wallMesh);
+                supportGizmos.push(wallMesh);
+
+            } else if (preset === 'four_corners') {
+                // Four Corner Pyramids at Z = 0
+                var cornerGeo = new THREE.ConeGeometry(size * 0.8, size, 4);
+                var corners = [[0, 0], [Lx, 0], [0, Ly], [Lx, Ly]];
+                corners.forEach(function(pt) {
+                    var cMesh = new THREE.Mesh(cornerGeo, pinMat);
+                    cMesh.position.set(pt[0], -size * 0.4, pt[1]);
+                    scene.add(cMesh);
+                    supportGizmos.push(cMesh);
+                });
+            }
+        }
+
+        // --- 2. Custom Bounding Box Supports Rendering ---
         if (supportBoxVisual) scene.remove(supportBoxVisual);
-        if (document.getElementById('support_mode').value === 'custom') {
+        if (supMode === 'custom') {
             var xMin = parseFloat(document.getElementById('sup_x_min').value) || 0;
             var xMax = parseFloat(document.getElementById('sup_x_max').value) || 0;
             var yMin = parseFloat(document.getElementById('sup_y_min').value) || 0;
             var yMax = parseFloat(document.getElementById('sup_y_max').value) || 0;
             var zMin = parseFloat(document.getElementById('sup_z_min').value) || 0;
             var zMax = parseFloat(document.getElementById('sup_z_max').value) || 0;
-            var dx = Math.max(xMax - xMin, 5), dy = Math.max(yMax - yMin, 5), dz = Math.max(zMax - zMin, 5);
+            
+            var dx = Math.max(xMax - xMin, size * 0.5), dy = Math.max(yMax - yMin, size * 0.5), dz = Math.max(zMax - zMin, size * 0.5);
             var supGeo = new THREE.BoxGeometry(dx, dz, dy);
-            var supEdges = new THREE.EdgesGeometry(supGeo);
-            supportBoxVisual = new THREE.LineSegments(supEdges, new THREE.LineBasicMaterial({ color: 0x0000ff }));
-            supportBoxVisual.position.set(xMin + dx / 2.0, zMin + dz / 2.0, yMin + dy / 2.0);
-            scene.add(supportBoxVisual);
+            var supMesh = new THREE.Mesh(supGeo, pinMat);
+            supMesh.position.set(xMin + dx / 2.0, zMin + dz / 2.0, yMin + dy / 2.0);
+            scene.add(supMesh);
+            supportGizmos.push(supMesh);
         }
 
-        supportSpheres.forEach(function(s) { scene.remove(s); });
-        supportSpheres = [];
+        // --- 3. Discrete Point Supports Table Entries (Pin Cones / Roller Cylinders) ---
         var pointSups = getPointSupportArrayData();
-        var sphereGeo = new THREE.SphereGeometry(18, 16, 16);
-        var sphereMat = new THREE.MeshStandardMaterial({ color: 0x0000ff });
+        var ptPinGeo = new THREE.ConeGeometry(size * 0.6, size * 0.8, 4);
+        var ptRollerGeo = new THREE.CylinderGeometry(size * 0.25, size * 0.25, size * 0.8, 16);
+
         pointSups.forEach(function(ps) {
-            var sphere = new THREE.Mesh(sphereGeo, sphereMat);
-            sphere.position.set(ps.x, ps.z, ps.y);
-            scene.add(sphere);
-            supportSpheres.push(sphere);
+            var isPin = ps.dofs.includes('x') && ps.dofs.includes('y') && ps.dofs.includes('z');
+            var ptMesh;
+
+            if (isPin) {
+                // Full 3-DOF Restraint: Emerald Green Pyramid pointing to node
+                ptMesh = new THREE.Mesh(ptPinGeo, pinMat);
+                ptMesh.position.set(ps.x, ps.z - size * 0.4, ps.y);
+            } else {
+                // Partial/Roller Restraint: Coral Red Transverse Cylinder
+                ptMesh = new THREE.Mesh(ptRollerGeo, rollerMat);
+                ptMesh.rotation.x = Math.PI / 2;
+                ptMesh.position.set(ps.x, ps.z - size * 0.25, ps.y);
+            }
+
+            scene.add(ptMesh);
+            supportGizmos.push(ptMesh);
         });
 
+        // --- 4. Render Point Load Vectors ---
         forceArrows.forEach(function(a) { scene.remove(a); });
         forceArrows = [];
         getLoadArrayData().forEach(function(ld) {
@@ -722,8 +854,6 @@
             }
         });
     }
-
-    // ---- WASM ENGINE WIRING (replaces Flask fetch/poll logic) ----
 
     function initWasmEngine() {
         worker = new Worker('solver_worker.js?cb=' + Date.now());
@@ -769,11 +899,12 @@
             currentFaces = data.data.faces;
             currentStressesMPa = data.data.stresses_mpa;
             currentDeflectionsMM = data.data.deflections_mm || [];
-            currentSigmaMaxAbs = data.data.sigma_max_abs;
-            currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_tens : data.data.sigma_max_abs;
-            currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : -data.data.sigma_max_abs;
+            
+            // Exact Asymmetric Peak Extraction
+            currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_tens : Math.max(0.0, ...currentStressesMPa);
+            currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : Math.min(0.0, ...currentStressesMPa);
             currentUMax = data.data.u_max;
-            currentFk = data.data.f_k || 355.0;
+            currentFk = data.data.f_k || 30.0;
 
             status.style.color = "#000000";
             status.style.borderLeftColor = "#000000";
@@ -813,10 +944,10 @@
             masonry_unit_fb: parseFloat(document.getElementById('masonry_unit_fb').value) || 20.0,
             mortar_fm: parseFloat(document.getElementById('mortar_fm').value) || 6.0,
             stone_E: parseFloat(document.getElementById('stone_E').value) || 35000.0,
-            custom_E: parseFloat(document.getElementById('custom_E').value) || 210000.0,
-            custom_nu: parseFloat(document.getElementById('custom_nu').value) || 0.30,
-            custom_fk: parseFloat(document.getElementById('custom_fk').value) || 355.0,
-            custom_gamma_kn_m3: parseFloat(document.getElementById('custom_gamma').value) || 0.0,
+            custom_E: parseFloat(document.getElementById('custom_E').value) || 33000.0,
+            custom_nu: parseFloat(document.getElementById('custom_nu').value) || 0.20,
+            custom_fk: parseFloat(document.getElementById('custom_fk').value) || 30.0,
+            custom_gamma_kn_m3: parseFloat(document.getElementById('custom_gamma').value) || 25.0,
             Lx: parseFloat(document.getElementById('Lx').value),
             Ly: parseFloat(document.getElementById('Ly').value),
             Lz: parseFloat(document.getElementById('Lz').value),
@@ -844,8 +975,6 @@
     }
 
     function stopOptimisation() {
-        // Pyodide has no clean mid-computation cancellation from the host page,
-        // so "stop" terminates the worker outright and boots a fresh one.
         var status = document.getElementById('status');
         status.style.color = "#cc0000";
         status.style.borderLeftColor = "#cc0000";
@@ -872,22 +1001,23 @@
         return val.toFixed(2) + " mm";
     }
 
-    function updateLegendLabels(scaleMax, isDeflectionMode) {
+    /* Asymmetric Legend Label Mapping */
+    function updateLegendLabels(isDeflectionMode) {
         var legendTitle = document.getElementById('legend-title');
         if (isDeflectionMode) {
             legendTitle.innerText = "Displacement Map (mm)";
-            document.getElementById('lbl-100').innerText = formatMM(scaleMax) + " (Max Uz)";
-            document.getElementById('lbl-075').innerText = formatMM(scaleMax * 0.75);
-            document.getElementById('lbl-050').innerText = formatMM(scaleMax * 0.50);
-            document.getElementById('lbl-025').innerText = formatMM(scaleMax * 0.25);
+            document.getElementById('lbl-100').innerText = formatMM(currentUMax) + " (Max Uz)";
+            document.getElementById('lbl-075').innerText = formatMM(currentUMax * 0.75);
+            document.getElementById('lbl-050').innerText = formatMM(currentUMax * 0.50);
+            document.getElementById('lbl-025').innerText = formatMM(currentUMax * 0.25);
             document.getElementById('lbl-000').innerText = "0.00 mm";
         } else {
             legendTitle.innerText = "Stress Map (MPa)";
-            document.getElementById('lbl-100').innerText = "+" + formatMPa(scaleMax) + " (Tension)";
-            document.getElementById('lbl-075').innerText = "+" + formatMPa(scaleMax * 0.50);
-            document.getElementById('lbl-050').innerText = "0.0 MPa (Neutral)";
-            document.getElementById('lbl-025').innerText = "-" + formatMPa(scaleMax * 0.50);
-            document.getElementById('lbl-000').innerText = "-" + formatMPa(scaleMax) + " (Compression)";
+            document.getElementById('lbl-100').innerText = "+" + formatMPa(currentSigmaMaxTens) + " (Max Tens)";
+            document.getElementById('lbl-075').innerText = "+" + formatMPa(currentSigmaMaxTens * 0.50);
+            document.getElementById('lbl-050').innerText = "0.0 MPa (Neutral Axis)";
+            document.getElementById('lbl-025').innerText = formatMPa(currentSigmaMaxComp * 0.50);
+            document.getElementById('lbl-000').innerText = formatMPa(currentSigmaMaxComp) + " (Max Comp)";
         }
     }
 
@@ -895,11 +1025,9 @@
         var legend = document.getElementById('legend');
         var mode = document.getElementById('render_mode').value;
         var isDeflectionMode = (mode === 'deflection');
-        var scaleMax = isDeflectionMode ? currentUMax : currentSigmaMaxAbs;
-        if (scaleMax <= 0) scaleMax = 1.0;
 
         if (mode === 'ec3_stress' || mode === 'deflection') {
-            updateLegendLabels(scaleMax, isDeflectionMode);
+            updateLegendLabels(isDeflectionMode);
             legend.style.display = 'flex';
         } else {
             legend.style.display = 'none';
@@ -912,16 +1040,27 @@
         var positions = [];
         var colors = [];
 
-        var colorScaleSigned = function(val, maxVal) {
-            var norm = Math.min(Math.max(val / maxVal, -1.0), 1.0);
-            var ratio = (norm + 1.0) / 2.0;
-            var h = (1.0 - ratio) * 240 / 360;
-            var c = new THREE.Color(); c.setHSL(h, 0.85, 0.45); return c;
+        /* Asymmetric Piecewise HSL Color Scaler Centered at Neutral Axis (0.0 MPa) */
+        var colorScaleSignedAsymmetric = function(val, maxTens, minComp) {
+            var h;
+            if (val >= 0) {
+                var normTens = (maxTens > 1e-6) ? Math.min(val / maxTens, 1.0) : 0.0;
+                h = (1.0 - normTens) * 120.0 / 360.0;
+            } else {
+                var normComp = (Math.abs(minComp) > 1e-6) ? Math.min(Math.abs(val / minComp), 1.0) : 0.0;
+                h = (120.0 + normComp * 120.0) / 360.0;
+            }
+            var c = new THREE.Color(); 
+            c.setHSL(h, 0.85, 0.45); 
+            return c;
         };
+
         var colorScaleUnsigned = function(val, maxVal) {
             var norm = Math.min(Math.max(val / maxVal, 0.0), 1.0);
-            var h = (1.0 - norm) * 240 / 360;
-            var c = new THREE.Color(); c.setHSL(h, 0.85, 0.45); return c;
+            var h = (1.0 - norm) * 240.0 / 360.0;
+            var c = new THREE.Color(); 
+            c.setHSL(h, 0.85, 0.45); 
+            return c;
         };
 
         var activeFieldArray = isDeflectionMode ? currentDeflectionsMM : currentStressesMPa;
@@ -935,9 +1074,21 @@
 
             if (hasFieldData && (mode === 'ec3_stress' || mode === 'deflection')) {
                 var s1 = activeFieldArray[f[0]] || 0.0, s2 = activeFieldArray[f[1]] || 0.0, s3 = activeFieldArray[f[2]] || 0.0;
-                var scaleFn = isDeflectionMode ? colorScaleUnsigned : colorScaleSigned;
-                var c1 = scaleFn(s1, scaleMax), c2 = scaleFn(s2, scaleMax), c3 = scaleFn(s3, scaleMax);
-                colors.push(c1.r, c1.g, c1.b); colors.push(c2.r, c2.g, c2.b); colors.push(c3.r, c3.g, c3.b);
+                var c1, c2, c3;
+                
+                if (isDeflectionMode) {
+                    c1 = colorScaleUnsigned(s1, currentUMax);
+                    c2 = colorScaleUnsigned(s2, currentUMax);
+                    c3 = colorScaleUnsigned(s3, currentUMax);
+                } else {
+                    c1 = colorScaleSignedAsymmetric(s1, currentSigmaMaxTens, currentSigmaMaxComp);
+                    c2 = colorScaleSignedAsymmetric(s2, currentSigmaMaxTens, currentSigmaMaxComp);
+                    c3 = colorScaleSignedAsymmetric(s3, currentSigmaMaxTens, currentSigmaMaxComp);
+                }
+                
+                colors.push(c1.r, c1.g, c1.b); 
+                colors.push(c2.r, c2.g, c2.b); 
+                colors.push(c3.r, c3.g, c3.b);
             }
         });
 
