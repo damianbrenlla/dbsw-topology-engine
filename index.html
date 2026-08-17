@@ -1401,3 +1401,20 @@
             alert("No solved topology geometry available for export.");
             return;
         }
+        var stl = "solid DBSW_Optimised_Mesh\n";
+        currentFaces.forEach(function(f) {
+            var p1 = currentVertices[f[0]], p2 = currentVertices[f[1]], p3 = currentVertices[f[2]];
+
+            var ux = p2[0]-p1[0], uy = p2[1]-p1[1], uz = p2[2]-p1[2];
+            var vx = p3[0]-p1[0], vy = p3[1]-p1[1], vz = p3[2]-p1[2];
+            var nx = uy*vz - uz*vy, ny = uz*vx - ux*vz, nz = ux*vy - uy*vx;
+            var nlen = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1.0;
+            nx /= nlen; ny /= nlen; nz /= nlen;
+
+            stl += "  facet normal " + nx + " " + ny + " " + nz + "\n    outer loop\n";
+            stl += "      vertex " + p1[0] + " " + p1[1] + " " + p1[2] + "\n";
+            stl += "      vertex " + p2[0] + " " + p2[1] + " " + p2[2] + "\n";
+            stl += "      vertex " + p3[0] + " " + p3[1] + " " + p3[2] + "\n";
+            stl += "    endloop\n  endfacet\n";
+        });
+        stl
