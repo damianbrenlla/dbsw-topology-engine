@@ -14,6 +14,7 @@
             -webkit-font-smoothing: antialiased;
         }
         
+        /* DBSW Custom Minimalist Scrollbar Palette */
         #sidebar::-webkit-scrollbar {
             width: 6px;
         }
@@ -195,7 +196,7 @@
             <li>Configurable domain geometry, FE mesh, supports (preset, arbitrary, or discrete points only), and point/patch loads</li>
             <li>Void keep-out and forced-solid passive regions to constrain the optimiser directly</li>
             <li>Optional self-weight (dead load) inclusion</li>
-            <li>Signed stress (tension/compression) and directional displacement fields (Ux, Uy, Uz, |U|) with interactive section cut-planes</li>
+            <li>Signed stress (tension/compression) and displacement field visualisation with interactive section cut-planes</li>
             <li>Direct .STL export of the optimised geometry</li>
         </ul>
 
@@ -357,7 +358,9 @@
         <p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 4px 0 0 0;">
             With Support Mode set to "Only User-Selected Discrete Points"
             above, these rows are the <em>only</em> restraint the model has —
-            the preset and bounding-box restraints are ignored entirely.
+            the preset and bounding-box restraints are ignored entirely. Make
+            sure enough nodes are restrained across enough DOFs to prevent
+            rigid-body motion, or the solve will fail or return nonsense.
         </p>
     </div>
 
@@ -388,7 +391,9 @@
         </table>
         <p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 4px 0 0 0;">
             An empty table means zero external load. If self-weight is also
-            switched off below, the solver correctly returns a flat, zero-stress result.
+            switched off below, the solver correctly returns a flat,
+            zero-stress result — that's the expected physical answer for an
+            unloaded body, not a bug.
         </p>
     </div>
 
@@ -407,7 +412,15 @@
             <tbody id="void_region_table_body"></tbody>
         </table>
         <p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 4px 0 0 0;">
-            "Void" forces elements to stay empty (service penetrations). "Forced Solid" pins material in place (bearing pads).
+            "Void" forces every element inside the box to stay empty
+            regardless of what the optimiser would otherwise choose — useful
+            for service penetrations, ducts, or a doorway the topology has to
+            route around. "Forced Solid" pins material in place instead —
+            useful for a bearing pad or a fixing zone that must never be
+            hollowed out. Overlapping a region with a load or support point
+            can produce a physically meaningless model (e.g. a load applied
+            into thin air), so keep regions clear of your load/support
+            coordinates.
         </p>
     </div>
 
@@ -420,7 +433,9 @@
         </div>
         <p style="font-size: 0.70rem; color: #888888; line-height: 1.45; margin: 4px 0 0 0;">
             Volume fraction sets the target proportion of the domain kept as solid
-            material (0.90 = 90% by volume). Iterations sets how many SIMP passes run.
+            material (0.90 = 90% by volume). Iterations sets how many SIMP
+            optimisation passes run — more iterations generally converge to a
+            cleaner, more resolved topology at the cost of longer solve time.
         </p>
     </div>
     <div class="checkbox-group" style="margin-top: 2px;">
@@ -435,11 +450,8 @@
     <div class="control-group">
         <select id="render_mode" onchange="reRenderMesh()">
             <option value="ec3_stress">Stress Map (+Tension / -Compression)</option>
-            <option value="deflection_uz" selected>Displacement Uz (Vertical Deflection mm)</option>
-            <option value="deflection_ux">Displacement Ux (Longitudinal mm)</option>
-            <option value="deflection_uy">Displacement Uy (Transverse mm)</option>
-            <option value="deflection_mag">Displacement Magnitude |U| (mm)</option>
             <option value="grey">Monochrome Studio Grey (50%)</option>
+            <option value="deflection">Displacement Map (Deflection mm)</option>
         </select>
     </div>
 
@@ -487,21 +499,12 @@
     var forceArrows = [];
     var supportGizmos = [];
     var voidRegionGizmos = [];
+    var currentVertices = [], currentFaces = [], currentStressesMPa = [], currentDeflectionsMM = [];
     
-    // Triad Inset Overlay Variables
-    var triadScene, triadCamera, triadAxes;
-    var TRIAD_SIZE = 90; // Inset size in pixels
-
-    var currentVertices = [], currentFaces = [], currentStressesMPa = [];
-    var currentDeflectionsUx = [], currentDeflectionsUy = [], currentDeflectionsUz = [], currentDeflectionsUMag = [];
-    
-    // Field Peak Extremes Tracking
-    var currentSigmaMaxTens = 1.0, currentSigmaMaxComp = -1.0;
-    var currentUxMaxTens = 0.0, currentUxMinComp = 0.0;
-    var currentUyMaxTens = 0.0, currentUyMinComp = 0.0;
-    var currentUzMaxTens = 0.0, currentUzMinComp = 0.0;
-    var currentUMagMax = 1.0, currentFk = 30.0;
-
+    // Explicit Asymmetric Stress Bounds Tracking
+    var currentSigmaMaxTens = 1.0;  // Maximum Tensile Stress (+MPa)
+    var currentSigmaMaxComp = -1.0; // Maximum Compressive Stress (-MPa, negative)
+    var currentUMax = 1.0, currentFk = 30.0;
     var worker = null;
     var engineReady = false;
 
@@ -605,17 +608,6 @@
         clipPlaneZ.constant = parseFloat(document.getElementById('cut_z').value);
     }
 
-    function initTriad() {
-        triadScene = new THREE.Scene();
-        triadCamera = new THREE.PerspectiveCamera(50, 1, 1, 1000);
-        triadCamera.position.set(0, 0, 140);
-
-        // Axis Gizmo matching domain mapping: Red = X, Green = Y, Blue = Z
-        triadAxes = new THREE.AxesHelper(45);
-        triadScene.add(triadAxes);
-        triadScene.add(new THREE.AmbientLight(0xffffff, 1.0));
-    }
-
     function initThree() {
         var container = document.getElementById('viewport');
         scene = new THREE.Scene();
@@ -649,6 +641,7 @@
         window.addEventListener('resize', onWindowResize);
         updateMaterialUI();
 
+        // Add default pin/roller supports to Discrete Table for initial simple span baseline
         var tbody = document.getElementById('support_table_body');
         if (tbody && tbody.children.length === 0) {
             addSupportRow(0, 150, 0, 'xyz');
@@ -657,7 +650,6 @@
 
         applyLoadPreset();
         setupCutPlaneSliders();
-        initTriad();
         animate();
         updateDomainVisuals();
     }
@@ -665,23 +657,7 @@
     function animate() {
         requestAnimationFrame(animate);
         controls.update();
-
-        var container = document.getElementById('viewport');
-        renderer.setViewport(0, 0, container.clientWidth, container.clientHeight);
-        renderer.setScissorTest(false);
         renderer.render(scene, camera);
-
-        // Synchronize Triad Orientation
-        if (triadCamera && camera) {
-            triadCamera.quaternion.copy(camera.quaternion);
-
-            var pad = 16;
-            renderer.setClearColor(0xffffff, 0.0);
-            renderer.setScissor(pad, pad, TRIAD_SIZE, TRIAD_SIZE);
-            renderer.setViewport(pad, pad, TRIAD_SIZE, TRIAD_SIZE);
-            renderer.setScissorTest(true);
-            renderer.render(triadScene, triadCamera);
-        }
     }
 
     function onWindowResize() {
@@ -736,19 +712,34 @@
         updateDomainVisuals();
     }
 
+    // NEW: clears every row from the discrete point supports table in one
+    // click. This only affects the point-support table — it does not touch
+    // the separate Support Preset (cantilever / four corners / all edges)
+    // or the Custom Bounding Box restraint, which are independent
+    // restraint mechanisms defined above.
     function clearAllSupports() {
         var tbody = document.getElementById('support_table_body');
         tbody.innerHTML = '';
         updateDomainVisuals();
     }
 
+    // NEW: clears every row from the load table in one click. Combined with
+    // the solver_worker.js fix, this now genuinely means "solve with zero
+    // external load" rather than triggering a hidden default load.
     function clearAllLoads() {
         var tbody = document.getElementById('load_table_body');
         tbody.innerHTML = '';
+        // Switch the preset dropdown to "Custom" so it's clear the table
+        // is being manually managed rather than about to be repopulated by
+        // a preset the next time something else changes.
         document.getElementById('load_preset').value = 'custom';
         updateDomainVisuals();
     }
 
+    // NEW: Void / Forced-Solid passive region row management. These map
+    // directly onto domain.passive_mask in solver_worker.js — "void" pins
+    // an element's density to ~0, "solid" pins it to 1, overriding whatever
+    // the SIMP optimiser would otherwise choose for that region.
     function addVoidRegionRow(xMin, xMax, yMin, yMax, zMin, zMax, regionType) {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -859,6 +850,7 @@
         return supports;
     }
 
+    /* Universal 3D Support Visualiser (Presets, Custom Bounding Boxes & Point Support Table) */
     function updateDomainVisuals() {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -871,19 +863,23 @@
         domainBox.position.set(Lx / 2.0, Lz / 2.0, Ly / 2.0);
         scene.add(domainBox);
 
+        // Clear existing support gizmos
         supportGizmos.forEach(function(g) { scene.remove(g); });
         supportGizmos = [];
 
         var size = Math.max(120, Lz * 0.22);
         var supMode = document.getElementById('support_mode').value;
 
-        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 });
-        var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 });
+        // Shared Materials for Kinematic Primitives
+        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 }); // Emerald Green (Fixed/Pin XYZ)
+        var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 }); // Coral Red (Roller YZ)
 
+        // --- 1. Preset Supports Rendering ---
         if (supMode === 'preset') {
             var preset = document.getElementById('support_preset').value;
             
             if (preset === 'cantilever') {
+                // Fixed Cantilever Wall Face (X = 0 mm)
                 var wallGeo = new THREE.BoxGeometry(size * 0.4, Lz, Ly);
                 var wallMesh = new THREE.Mesh(wallGeo, pinMat);
                 wallMesh.position.set(-size * 0.2, Lz / 2.0, Ly / 2.0);
@@ -891,6 +887,7 @@
                 supportGizmos.push(wallMesh);
 
             } else if (preset === 'four_corners') {
+                // Four Corner Pyramids at Z = 0
                 var cornerGeo = new THREE.ConeGeometry(size * 0.8, size, 4);
                 var corners = [[0, 0], [Lx, 0], [0, Ly], [Lx, Ly]];
                 corners.forEach(function(pt) {
@@ -901,6 +898,9 @@
                 });
 
             } else if (preset === 'all_edges') {
+                // All Bottom Edges Supported: thin restraint bars traced
+                // along the full perimeter of the Z = 0 face, mirroring the
+                // Python-side add_support_box calls in solver_worker.js.
                 var edgeT = Math.max(size * 0.28, Math.min(Lx, Ly) * 0.02);
                 var edgeH = size * 0.35;
                 var edgeGeoX = new THREE.BoxGeometry(Lx, edgeH, edgeT);
@@ -924,6 +924,7 @@
             }
         }
 
+        // --- 2. Custom Bounding Box Supports Rendering ---
         if (supportBoxVisual) scene.remove(supportBoxVisual);
         if (supMode === 'custom') {
             var xMin = parseFloat(document.getElementById('sup_x_min').value) || 0;
@@ -941,6 +942,7 @@
             supportGizmos.push(supMesh);
         }
 
+        // --- 3. Discrete Point Supports Table Entries (Pin Cones / Roller Cylinders) ---
         var pointSups = getPointSupportArrayData();
         var ptPinGeo = new THREE.ConeGeometry(size * 0.6, size * 0.8, 4);
         var ptRollerGeo = new THREE.CylinderGeometry(size * 0.25, size * 0.25, size * 0.8, 16);
@@ -950,9 +952,11 @@
             var ptMesh;
 
             if (isPin) {
+                // Full 3-DOF Restraint: Emerald Green Pyramid pointing to node
                 ptMesh = new THREE.Mesh(ptPinGeo, pinMat);
                 ptMesh.position.set(ps.x, ps.z - size * 0.4, ps.y);
             } else {
+                // Partial/Roller Restraint: Coral Red Transverse Cylinder
                 ptMesh = new THREE.Mesh(ptRollerGeo, rollerMat);
                 ptMesh.rotation.x = Math.PI / 2;
                 ptMesh.position.set(ps.x, ps.z - size * 0.25, ps.y);
@@ -962,6 +966,7 @@
             supportGizmos.push(ptMesh);
         });
 
+        // --- 4. Render Point Load Vectors ---
         forceArrows.forEach(function(a) { scene.remove(a); });
         forceArrows = [];
         getLoadArrayData().forEach(function(ld) {
@@ -977,6 +982,11 @@
             }
         });
 
+        // --- 5. Render Void / Forced-Solid Passive Region Boxes ---
+        // Deliberately distinct colours from supports (emerald/coral) and
+        // loads (red arrows): amber/translucent for Void keep-outs, blue/
+        // translucent for Forced Solid zones, so all three restraint types
+        // stay visually unambiguous at a glance.
         voidRegionGizmos.forEach(function(g) { scene.remove(g); });
         voidRegionGizmos = [];
         var voidFillMat = new THREE.MeshStandardMaterial({
@@ -1050,26 +1060,12 @@
             currentVertices = data.data.vertices;
             currentFaces = data.data.faces;
             currentStressesMPa = data.data.stresses_mpa;
+            currentDeflectionsMM = data.data.deflections_mm || [];
             
-            // Directional Displacements Allocation
-            currentDeflectionsUx = data.data.deflections_ux_mm || [];
-            currentDeflectionsUy = data.data.deflections_uy_mm || [];
-            currentDeflectionsUz = data.data.deflections_uz_mm || [];
-            currentDeflectionsUMag = data.data.deflections_umag_mm || [];
-            
-            // Asymmetric Stress Peaks
+            // Exact Asymmetric Peak Extraction
             currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_tens : Math.max(0.0, ...currentStressesMPa);
             currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : Math.min(0.0, ...currentStressesMPa);
-            
-            // Directional Displacement Peaks
-            currentUxMaxTens = data.data.ux_max_tens != null ? data.data.ux_max_tens : 0.0;
-            currentUxMinComp = data.data.ux_min_comp != null ? data.data.ux_min_comp : 0.0;
-            currentUyMaxTens = data.data.uy_max_tens != null ? data.data.uy_max_tens : 0.0;
-            currentUyMinComp = data.data.uy_min_comp != null ? data.data.uy_min_comp : 0.0;
-            currentUzMaxTens = data.data.uz_max_tens != null ? data.data.uz_max_tens : 0.0;
-            currentUzMinComp = data.data.uz_min_comp != null ? data.data.uz_min_comp : 0.0;
-            currentUMagMax = data.data.umag_max_abs || 1.0;
-
+            currentUMax = data.data.u_max;
             currentFk = data.data.f_k || 30.0;
 
             status.style.color = "#000000";
@@ -1168,30 +1164,16 @@
         return val.toFixed(2) + " mm";
     }
 
-    /* Asymmetric & Directional Legend Label Mapping */
-    function updateLegendLabels(mode) {
+    /* Asymmetric Legend Label Mapping */
+    function updateLegendLabels(isDeflectionMode) {
         var legendTitle = document.getElementById('legend-title');
-        
-        if (mode === 'deflection_mag') {
-            legendTitle.innerText = "Displacement |U| (mm)";
-            document.getElementById('lbl-100').innerText = formatMM(currentUMagMax) + " (Max |U|)";
-            document.getElementById('lbl-075').innerText = formatMM(currentUMagMax * 0.75);
-            document.getElementById('lbl-050').innerText = formatMM(currentUMagMax * 0.50);
+        if (isDeflectionMode) {
+            legendTitle.innerText = "Displacement Map (mm)";
+            document.getElementById('lbl-100').innerText = formatMM(currentUMax) + " (Max Uz)";
+            document.getElementById('lbl-075').innerText = formatMM(currentUMax * 0.75);
+            document.getElementById('lbl-050').innerText = formatMM(currentUMax * 0.50);
             document.getElementById('lbl-025').innerText = formatMM(currentUMax * 0.25);
             document.getElementById('lbl-000').innerText = "0.00 mm";
-
-        } else if (mode.startsWith('deflection_')) {
-            var dirChar = mode.split('_')[1].toUpperCase();
-            var pTens = (dirChar === 'UX') ? currentUxMaxTens : ((dirChar === 'UY') ? currentUyMaxTens : currentUzMaxTens);
-            var pComp = (dirChar === 'UX') ? currentUxMinComp : ((dirChar === 'UY') ? currentUyMinComp : currentUzMinComp);
-
-            legendTitle.innerText = "Displacement " + dirChar + " (mm)";
-            document.getElementById('lbl-100').innerText = "+" + formatMM(pTens) + " (+" + dirChar + ")";
-            document.getElementById('lbl-075').innerText = "+" + formatMM(pTens * 0.50);
-            document.getElementById('lbl-050').innerText = "0.00 mm";
-            document.getElementById('lbl-025').innerText = formatMM(pComp * 0.50);
-            document.getElementById('lbl-000').innerText = formatMM(pComp) + " (-" + dirChar + ")";
-
         } else {
             legendTitle.innerText = "Stress Map (MPa)";
             document.getElementById('lbl-100').innerText = "+" + formatMPa(currentSigmaMaxTens) + " (Max Tens)";
@@ -1205,9 +1187,10 @@
     function reRenderMesh() {
         var legend = document.getElementById('legend');
         var mode = document.getElementById('render_mode').value;
+        var isDeflectionMode = (mode === 'deflection');
 
-        if (mode !== 'grey') {
-            updateLegendLabels(mode);
+        if (mode === 'ec3_stress' || mode === 'deflection') {
+            updateLegendLabels(isDeflectionMode);
             legend.style.display = 'flex';
         } else {
             legend.style.display = 'none';
@@ -1220,14 +1203,15 @@
         var positions = [];
         var colors = [];
 
-        var colorScaleSignedAsymmetric = function(val, maxPos, minNeg) {
+        /* Asymmetric Piecewise HSL Color Scaler Centered at Neutral Axis (0.0 MPa) */
+        var colorScaleSignedAsymmetric = function(val, maxTens, minComp) {
             var h;
             if (val >= 0) {
-                var normPos = (maxPos > 1e-6) ? Math.min(val / maxPos, 1.0) : 0.0;
-                h = (1.0 - normPos) * 120.0 / 360.0;
+                var normTens = (maxTens > 1e-6) ? Math.min(val / maxTens, 1.0) : 0.0;
+                h = (1.0 - normTens) * 120.0 / 360.0;
             } else {
-                var normNeg = (Math.abs(minNeg) > 1e-6) ? Math.min(Math.abs(val / minNeg), 1.0) : 0.0;
-                h = (120.0 + normNeg * 120.0) / 360.0;
+                var normComp = (Math.abs(minComp) > 1e-6) ? Math.min(Math.abs(val / minComp), 1.0) : 0.0;
+                h = (120.0 + normComp * 120.0) / 360.0;
             }
             var c = new THREE.Color(); 
             c.setHSL(h, 0.85, 0.45); 
@@ -1242,28 +1226,7 @@
             return c;
         };
 
-        // Active Field & Scale Routing
-        var activeFieldArray = null;
-        var pTens = 1.0, pComp = -1.0, pMag = 1.0;
-        var isUnsigned = false;
-
-        if (mode === 'ec3_stress') {
-            activeFieldArray = currentStressesMPa;
-            pTens = currentSigmaMaxTens; pComp = currentSigmaMaxComp;
-        } else if (mode === 'deflection_ux') {
-            activeFieldArray = currentDeflectionsUx;
-            pTens = currentUxMaxTens; pComp = currentUxMinComp;
-        } else if (mode === 'deflection_uy') {
-            activeFieldArray = currentDeflectionsUy;
-            pTens = currentUyMaxTens; pComp = currentUyMinComp;
-        } else if (mode === 'deflection_uz') {
-            activeFieldArray = currentDeflectionsUz;
-            pTens = currentUzMaxTens; pComp = currentUzMinComp;
-        } else if (mode === 'deflection_mag') {
-            activeFieldArray = currentDeflectionsUMag;
-            pMag = currentUMagMax; isUnsigned = true;
-        }
-
+        var activeFieldArray = isDeflectionMode ? currentDeflectionsMM : currentStressesMPa;
         var hasFieldData = activeFieldArray && activeFieldArray.length === currentVertices.length;
 
         currentFaces.forEach(function(f) {
@@ -1272,18 +1235,18 @@
             positions.push(p2[0], p2[2], p2[1]);
             positions.push(p3[0], p3[2], p3[1]);
 
-            if (hasFieldData && mode !== 'grey') {
+            if (hasFieldData && (mode === 'ec3_stress' || mode === 'deflection')) {
                 var s1 = activeFieldArray[f[0]] || 0.0, s2 = activeFieldArray[f[1]] || 0.0, s3 = activeFieldArray[f[2]] || 0.0;
                 var c1, c2, c3;
                 
-                if (isUnsigned) {
-                    c1 = colorScaleUnsigned(s1, pMag);
-                    c2 = colorScaleUnsigned(s2, pMag);
-                    c3 = colorScaleUnsigned(s3, pMag);
+                if (isDeflectionMode) {
+                    c1 = colorScaleUnsigned(s1, currentUMax);
+                    c2 = colorScaleUnsigned(s2, currentUMax);
+                    c3 = colorScaleUnsigned(s3, currentUMax);
                 } else {
-                    c1 = colorScaleSignedAsymmetric(s1, pTens, pComp);
-                    c2 = colorScaleSignedAsymmetric(s2, pTens, pComp);
-                    c3 = colorScaleSignedAsymmetric(s3, pTens, pComp);
+                    c1 = colorScaleSignedAsymmetric(s1, currentSigmaMaxTens, currentSigmaMaxComp);
+                    c2 = colorScaleSignedAsymmetric(s2, currentSigmaMaxTens, currentSigmaMaxComp);
+                    c3 = colorScaleSignedAsymmetric(s3, currentSigmaMaxTens, currentSigmaMaxComp);
                 }
                 
                 colors.push(c1.r, c1.g, c1.b); 
@@ -1295,7 +1258,7 @@
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
 
         var material;
-        if (hasFieldData && mode !== 'grey') {
+        if (hasFieldData && (mode === 'ec3_stress' || mode === 'deflection')) {
             geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
             geometry.computeVertexNormals();
             material = new THREE.MeshStandardMaterial({
