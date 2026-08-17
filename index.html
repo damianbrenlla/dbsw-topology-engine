@@ -130,6 +130,11 @@
             border-top: 1px solid #e5e5e5; padding-top: 12px; margin-bottom: 16px;
         }
         #intro-modal .author-line a { color: #000000; }
+
+        #triad-overlay {
+            pointer-events: none;
+            user-select: none;
+        }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -225,6 +230,9 @@
             <input type="number" step="0.1" id="custom_gamma" value="25.0">
         </div>
     </div>
+
+    <hr>
+    <div class="section-header">Domain & Mesh</div>
 
     <div class="control-group">
         <label>Domain Geometry Lx, Ly, Lz (mm)</label>
@@ -424,9 +432,12 @@
     var supportGizmos = [];
     var voidRegionGizmos = [];
 
-    // Minimalist Reference Triad Overlay Variables
-    var triadScene, triadCamera, triadAxes;
-    var TRIAD_SIZE = 90;
+    // Minimalist Reference Triad Overlay
+    var triadScene, triadCamera;
+    var triadRenderer;
+    var triadGroup;
+    var triadLabels = {};
+    var TRIAD_SIZE = 96;
 
     var currentVertices = [], currentFaces = [], currentStressesMPa = [];
     var currentDeflectionsUx = [], currentDeflectionsUy = [], currentDeflectionsUz = [], currentDeflectionsUMag = [];
@@ -541,18 +552,151 @@
         clipPlaneZ.constant = parseFloat(document.getElementById('cut_z').value);
     }
 
-    function initTriad() {
-        triadScene = new THREE.Scene();
-        triadCamera = new THREE.PerspectiveCamera(50, 1, 1, 1000);
-        triadCamera.position.set(0, 0, 140);
+    function createTriadLabel(text, color) {
+        var canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
 
-        // Minimalist 3D Axes: Red = X (Lx), Green = Y (Ly), Blue = Z (Lz)
-        triadAxes = new THREE.AxesHelper(45);
-        triadAxes.renderOrder = 1;
-        triadAxes.material.depthTest = false;
-        
-        triadScene.add(triadAxes);
-        triadScene.add(new THREE.AmbientLight(0xffffff, 1.0));
+        var context = canvas.getContext('2d');
+
+        context.clearRect(0, 0, canvas.width, canvas.height);
+
+        context.font = '600 30px Helvetica Neue, Helvetica, Arial, sans-serif';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+
+        context.lineWidth = 5;
+        context.strokeStyle = 'rgba(255,255,255,0.95)';
+        context.strokeText(text, 32, 32);
+
+        var hex = '#' + color.toString(16).padStart(6, '0');
+        context.fillStyle = hex;
+        context.fillText(text, 32, 32);
+
+        var texture = new THREE.CanvasTexture(canvas);
+        texture.minFilter = THREE.LinearFilter;
+        texture.needsUpdate = true;
+
+        var material = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            depthTest: false,
+            depthWrite: false
+        });
+
+        var sprite = new THREE.Sprite(material);
+        sprite.scale.set(16, 16, 1);
+        sprite.renderOrder = 22;
+
+        return sprite;
+    }
+
+    function initTriad() {
+        var container = document.getElementById('viewport');
+
+        triadScene = new THREE.Scene();
+
+        triadCamera = new THREE.OrthographicCamera(
+            -55, 55, 55, -55, 0.1, 1000
+        );
+        triadCamera.position.set(0, 0, 160);
+        triadCamera.lookAt(0, 0, 0);
+
+        triadGroup = new THREE.Group();
+
+        var axisLength = 34;
+        var headLength = 7;
+        var headWidth = 4;
+
+        var axisDefinitions = [
+            {
+                key: 'X',
+                direction: new THREE.Vector3(1, 0, 0),
+                color: 0x000000
+            },
+            {
+                key: 'Y',
+                direction: new THREE.Vector3(0, 0, 1),
+                color: 0x555555
+            },
+            {
+                key: 'Z',
+                direction: new THREE.Vector3(0, 1, 0),
+                color: 0x999999
+            }
+        ];
+
+        axisDefinitions.forEach(function(axis) {
+            var arrow = new THREE.ArrowHelper(
+                axis.direction,
+                new THREE.Vector3(0, 0, 0),
+                axisLength,
+                axis.color,
+                headLength,
+                headWidth
+            );
+
+            arrow.line.material.depthTest = false;
+            arrow.line.material.depthWrite = false;
+            arrow.cone.material.depthTest = false;
+            arrow.cone.material.depthWrite = false;
+
+            arrow.renderOrder = 20;
+            triadGroup.add(arrow);
+
+            var label = createTriadLabel(axis.key, axis.color);
+            label.position.copy(axis.direction).multiplyScalar(axisLength + 9);
+            triadGroup.add(label);
+
+            triadLabels[axis.key] = label;
+        });
+
+        var originGeometry = new THREE.CircleGeometry(2.5, 16);
+        var originMaterial = new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            depthTest: false,
+            depthWrite: false
+        });
+
+        var origin = new THREE.Mesh(originGeometry, originMaterial);
+        origin.renderOrder = 21;
+        triadGroup.add(origin);
+
+        triadScene.add(triadGroup);
+
+        var backingGeometry = new THREE.PlaneGeometry(108, 108);
+        var backingMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.88,
+            depthTest: false,
+            depthWrite: false
+        });
+
+        var backing = new THREE.Mesh(backingGeometry, backingMaterial);
+        backing.position.z = -8;
+        backing.renderOrder = 0;
+        triadScene.add(backing);
+
+        triadRenderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: true
+        });
+
+        triadRenderer.setPixelRatio(window.devicePixelRatio);
+        triadRenderer.setSize(TRIAD_SIZE, TRIAD_SIZE);
+        triadRenderer.setClearColor(0xffffff, 0);
+        triadRenderer.domElement.id = 'triad-overlay';
+
+        triadRenderer.domElement.style.position = 'absolute';
+        triadRenderer.domElement.style.left = '16px';
+        triadRenderer.domElement.style.bottom = '16px';
+        triadRenderer.domElement.style.width = TRIAD_SIZE + 'px';
+        triadRenderer.domElement.style.height = TRIAD_SIZE + 'px';
+        triadRenderer.domElement.style.pointerEvents = 'none';
+        triadRenderer.domElement.style.zIndex = '50';
+
+        container.appendChild(triadRenderer.domElement);
     }
 
     function initThree() {
@@ -610,25 +754,15 @@
         var width = container.clientWidth;
         var height = container.clientHeight;
 
-        // --- Pass 1: Render Primary 3D Scene ---
         renderer.setViewport(0, 0, width, height);
         renderer.setScissorTest(false);
         renderer.setClearColor(0xffffff, 1.0);
         renderer.clear();
         renderer.render(scene, camera);
 
-        // --- Pass 2: Render Inset Triad Overlay (Bottom-Left Corner) ---
-        if (triadCamera && camera) {
-            triadCamera.quaternion.copy(camera.quaternion);
-
-            var pad = 16;
-            renderer.setViewport(pad, pad, TRIAD_SIZE, TRIAD_SIZE);
-            renderer.setScissor(pad, pad, TRIAD_SIZE, TRIAD_SIZE);
-            renderer.setScissorTest(true);
-
-            renderer.clearDepth();
-            renderer.render(triadScene, triadCamera);
-            renderer.setScissorTest(false);
+        if (triadRenderer && triadGroup && camera) {
+            triadGroup.quaternion.copy(camera.quaternion).invert();
+            triadRenderer.render(triadScene, triadCamera);
         }
     }
 
@@ -637,6 +771,11 @@
         camera.aspect = container.clientWidth / container.clientHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(container.clientWidth, container.clientHeight);
+
+        if (triadRenderer) {
+            triadRenderer.setPixelRatio(window.devicePixelRatio);
+            triadRenderer.setSize(TRIAD_SIZE, TRIAD_SIZE);
+        }
     }
 
     function toggleSupportMode() {
@@ -807,7 +946,6 @@
         return supports;
     }
 
-    /* Universal 3D Support Visualiser (Presets, Custom Bounding Boxes & Point Support Table) */
     function updateDomainVisuals() {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -1000,17 +1138,14 @@
             currentFaces = data.data.faces;
             currentStressesMPa = data.data.stresses_mpa;
             
-            // Directional Displacements Allocation
             currentDeflectionsUx = data.data.deflections_ux_mm || [];
             currentDeflectionsUy = data.data.deflections_uy_mm || [];
             currentDeflectionsUz = data.data.deflections_uz_mm || [];
             currentDeflectionsUMag = data.data.deflections_umag_mm || [];
             
-            // Asymmetric Stress Peaks
             currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_tens : Math.max(0.0, ...currentStressesMPa);
             currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : Math.min(0.0, ...currentStressesMPa);
             
-            // Directional Displacement Peaks
             currentUxMaxTens = data.data.ux_max_tens != null ? data.data.ux_max_tens : 0.0;
             currentUxMinComp = data.data.ux_min_comp != null ? data.data.ux_min_comp : 0.0;
             currentUyMaxTens = data.data.uy_max_tens != null ? data.data.uy_max_tens : 0.0;
@@ -1117,7 +1252,6 @@
         return val.toFixed(2) + " mm";
     }
 
-    /* Asymmetric & Directional Legend Label Mapping */
     function updateLegendLabels(mode) {
         var legendTitle = document.getElementById('legend-title');
         
@@ -1191,7 +1325,6 @@
             return c;
         };
 
-        // Active Field & Scale Routing
         var activeFieldArray = null;
         var pTens = 1.0, pComp = -1.0, pMag = 1.0;
         var isUnsigned = false;
@@ -1268,33 +1401,3 @@
             alert("No solved topology geometry available for export.");
             return;
         }
-        var stl = "solid DBSW_Optimised_Mesh\n";
-        currentFaces.forEach(function(f) {
-            var p1 = currentVertices[f[0]], p2 = currentVertices[f[1]], p3 = currentVertices[f[2]];
-
-            var ux = p2[0]-p1[0], uy = p2[1]-p1[1], uz = p2[2]-p1[2];
-            var vx = p3[0]-p1[0], vy = p3[1]-p1[1], vz = p3[2]-p1[2];
-            var nx = uy*vz - uz*vy, ny = uz*vx - ux*vz, nz = ux*vy - uy*vx;
-            var nlen = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1.0;
-            nx /= nlen; ny /= nlen; nz /= nlen;
-
-            stl += "  facet normal " + nx + " " + ny + " " + nz + "\n    outer loop\n";
-            stl += "      vertex " + p1[0] + " " + p1[1] + " " + p1[2] + "\n";
-            stl += "      vertex " + p2[0] + " " + p2[1] + " " + p2[2] + "\n";
-            stl += "      vertex " + p3[0] + " " + p3[1] + " " + p3[2] + "\n";
-            stl += "    endloop\n  endfacet\n";
-        });
-        stl += "endsolid DBSW_Optimised_Mesh\n";
-        var blob = new Blob([stl], { type: 'text/plain' });
-        var link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'DBSW_Topology_Mesh.stl';
-        link.click();
-    }
-
-    initThree();
-    initWasmEngine();
-</script>
-
-</body>
-</html>
