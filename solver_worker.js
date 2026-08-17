@@ -1,31 +1,12 @@
 /**
  * DBSW R260003 Topology Engine - Client-Side Pyodide WebWorker
  * Author: Damian Brenlla / DBSW 2026
- *
- * This mirrors the orchestration logic in the Flask app.py version (support
- * presets/custom boxes, point supports, load presets/point loads, optional
- * self-weight, approximate no-tension sensitivity penalty, penal_k
- * continuation) but runs it inside Pyodide instead of a server process.
- *
- * The optimisation loop runs ONE ITERATION PER `await pyodide.runPythonAsync`
- * call so the worker yields control back to the JS event loop after every
- * iteration and can postMessage live progress — a single giant Python call
- * blocks postMessage entirely until it finishes, which is what made earlier
- * versions of this page look frozen.
- *
- * FIX (2026): Removed the silent "no loads defined -> apply a default
- * -100kN tip load" fallback. That fallback meant deleting every row in the
- * custom load table did NOT give you a zero-load model — it silently
- * substituted a synthetic demo load, so stress/deflection maps kept showing
- * non-zero results even with self-weight switched off. An empty load array
- * now correctly means zero external load.
  */
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
 
 let pyodide = null;
 
-// Mirrors PENAL_INIT / PENAL_FINAL / PENAL_STEP / NOTENSION_WEIGHT in app.py
 const PENAL_INIT = 1.0;
 const PENAL_FINAL = 3.0;
 const PENAL_STEP = 0.5;
@@ -99,8 +80,7 @@ self.onmessage = async function(e) {
             pyodide.globals.set("PENAL_STEP", PENAL_STEP);
             pyodide.globals.set("NOTENSION_WEIGHT", NOTENSION_WEIGHT);
 
-            // 1. ONE-OFF SETUP: material, domain, supports, loads, optimiser instance.
-            // Mirrors sections 1-5 of async_optimise_worker() in app.py.
+            // 1. Setup Material, Domain & Additive Boundary Conditions
             await pyodide.runPythonAsync(`
 t0 = time.time()
 payload = json.loads(payload_json)
@@ -116,11 +96,6 @@ domain = Domain3D(
 )
 
 # --- Void / Forced-Solid Passive Regions ---
-# Writes directly into domain.passive_mask, the same array the SIMP update
-# step already checks every iteration (see the xnew[domain.passive_mask...]
-# lines further down). A region tagged "void" pins those elements to near-
-# zero density; "solid" pins them fully solid — either way the optimiser is
-# no longer free to choose for those elements, regardless of load path.
 void_regions = payload.get("void_regions", [])
 if void_regions:
     _rx = (np.arange(domain.nx) + 0.5) * domain.dx
@@ -142,18 +117,12 @@ sup_preset = payload.get("support_preset", "cantilever")
 if sup_mode == "preset":
     if sup_preset == "cantilever":
         domain.add_support_box([0.0, 0.0], [0.0, domain.Ly], [0.0, domain.Lz], dofs="xyz")
-    elif sup_preset == "simply_supported":
-        domain.add_support_box([0.0, 0.0], [0.0, domain.Ly], [0.0, 0.0], dofs="xyz")
-        domain.add_support_box([domain.Lx, domain.Lx], [0.0, domain.Ly], [0.0, 0.0], dofs="yz")
     elif sup_preset == "four_corners":
         domain.add_support_box([0.0, 0.0], [0.0, 0.0], [0.0, 0.0], dofs="xyz")
         domain.add_support_box([domain.Lx, domain.Lx], [0.0, 0.0], [0.0, 0.0], dofs="xyz")
         domain.add_support_box([0.0, 0.0], [domain.Ly, domain.Ly], [0.0, 0.0], dofs="xyz")
         domain.add_support_box([domain.Lx, domain.Lx], [domain.Ly, domain.Ly], [0.0, 0.0], dofs="xyz")
     elif sup_preset == "all_edges":
-        # All Bottom Edges Supported: restrains a thin band along the full
-        # perimeter of the Z=0 (bottom) face, like a simply-supported slab
-        # bearing on walls along all four sides.
         edge_t = max(domain.dx, domain.dy, domain.dz) * 1.5
         domain.add_support_box([0.0, domain.Lx], [0.0, edge_t], [0.0, 0.0], dofs="xyz")
         domain.add_support_box([0.0, domain.Lx], [domain.Ly - edge_t, domain.Ly], [0.0, 0.0], dofs="xyz")
@@ -164,10 +133,6 @@ elif sup_mode == "custom":
     y_b = [float(payload.get("sup_y_min", 0)), float(payload.get("sup_y_max", domain.Ly))]
     z_b = [float(payload.get("sup_z_min", 0)), float(payload.get("sup_z_max", domain.Lz))]
     domain.add_support_box(x_b, y_b, z_b, dofs=payload.get("sup_dofs", "xyz"))
-# else sup_mode == "points_only": intentionally no preset or bounding-box
-# restraint is added here. Restraint comes ENTIRELY from the point_supports
-# loop below, so the discrete support table has to be sufficient on its own
-# to prevent rigid-body motion.
 
 for ps in payload.get("point_supports", []):
     r = 15.0
@@ -184,12 +149,6 @@ if load_preset == "top_udl":
         total_load_xyz=[0.0, 0.0, -100000.0],
     )
 else:
-    # FIX: an empty load array is a valid, intentional zero-load case
-    # (e.g. testing self-weight-only behaviour). No synthetic fallback load
-    # is injected here any more — previously this silently added a
-    # -100kN tip load whenever the table was emptied, which is why
-    # stress/deflection maps kept showing non-zero results even with
-    # self-weight switched off.
     for ld in payload.get("loads", []):
         px, py, pz = float(ld["x"]), float(ld["y"]), float(ld["z"])
         fx = float(ld.get("Fx", 0.0)) * 1000.0
@@ -198,7 +157,7 @@ else:
         domain.add_point_load([px, py, pz], [fx, fy, fz])
 
 # --- Optimiser Setup ---
-volfrac = float(payload.get("volfrac", 0.20))
+volfrac = float(payload.get("volfrac", 0.90))
 sim_iterations = int(payload.get("iterations", 15))
 include_self_weight = bool(payload.get("include_self_weight", True))
 is_notension_material = domain.material_type in ("concrete", "masonry", "stone")
@@ -212,8 +171,7 @@ n_stages = int(round((PENAL_FINAL - PENAL_INIT) / PENAL_STEP)) + 1
 continuation_interval = max(1, sim_iterations // n_stages)
             `);
 
-            // 2. ONE SIMP ITERATION PER AWAIT — yields control back to JS each time
-            // so progress can actually reach the page. Mirrors section 6 of app.py.
+            // 2. SIMP Iteration Loop (Yields back to JS per iteration)
             for (let i = 0; i < iterations; i++) {
                 pyodide.globals.set("i", i);
                 const t0 = performance.now();
@@ -261,30 +219,47 @@ opt.x = xnew
 
             postMessage({ status: "running", current_iter: iterations, total_iter: iterations, phase: "Extracting mesh & recovering fields" });
 
-            // 3. Final solve on x_final + mesh extraction + stress/displacement field
-            // recovery. Mirrors section 7 of app.py.
+            // 3. Marching Cubes Mesh Isosurface Extraction & Multi-Component Field Recovery
             const resultJson = await pyodide.runPythonAsync(`
 U_final, K_final, _ = opt.assemble_and_solve_static(opt.x, include_self_weight=include_self_weight)
 
 padded_x = np.pad(opt.x, 1, mode="constant", constant_values=0)
 verts, faces, _, _ = measure.marching_cubes(padded_x, level=0.50)
 
+# 1. Recover Stress Field
 elem_stresses_mpa = opt.recover_element_stress_field(U_final)
 stress_grid_3d = elem_stresses_mpa.reshape((domain.nx, domain.ny, domain.nz))
 padded_stress = np.pad(stress_grid_3d, 1, mode="edge")
 
+# 2. Recover Directional Displacement Vectors (Ux, Uy, Uz) in mm
 U_nodes, disp_mags = opt.recover_nodal_displacements(U_final)
-disp_grid_3d = disp_mags.reshape((domain.nx + 1, domain.ny + 1, domain.nz + 1))
-padded_disp = np.pad(disp_grid_3d, 1, mode="edge")
+
+ux_grid = (U_nodes[:, 0] * 1000.0).reshape((domain.nx + 1, domain.ny + 1, domain.nz + 1))
+uy_grid = (U_nodes[:, 1] * 1000.0).reshape((domain.nx + 1, domain.ny + 1, domain.nz + 1))
+uz_grid = (U_nodes[:, 2] * 1000.0).reshape((domain.nx + 1, domain.ny + 1, domain.nz + 1))
+umag_grid = (disp_mags * 1000.0).reshape((domain.nx + 1, domain.ny + 1, domain.nz + 1))
+
+padded_ux = np.pad(ux_grid, 1, mode="edge")
+padded_uy = np.pad(uy_grid, 1, mode="edge")
+padded_uz = np.pad(uz_grid, 1, mode="edge")
+padded_umag = np.pad(umag_grid, 1, mode="edge")
 
 vertex_stresses_mpa = []
-vertex_deflections_mm = []
+vertex_ux = []
+vertex_uy = []
+vertex_uz = []
+vertex_umag = []
+
 for v in verts:
     ix = int(np.clip(round(v[0]), 0, domain.nx + 1))
     iy = int(np.clip(round(v[1]), 0, domain.ny + 1))
     iz = int(np.clip(round(v[2]), 0, domain.nz + 1))
+    
     vertex_stresses_mpa.append(float(padded_stress[ix, iy, iz]))
-    vertex_deflections_mm.append(float(padded_disp[ix, iy, iz]))
+    vertex_ux.append(float(padded_ux[ix, iy, iz]))
+    vertex_uy.append(float(padded_uy[ix, iy, iz]))
+    vertex_uz.append(float(padded_uz[ix, iy, iz]))
+    vertex_umag.append(float(padded_umag[ix, iy, iz]))
 
 verts_mm = np.copy(verts)
 verts_mm[:, 0] = (verts[:, 0] - 1.0) * domain.dx
@@ -301,18 +276,26 @@ else:
     sigma_max_comp = float(np.min(vertex_stresses_mpa))
 
 sigma_max_abs = max(abs(sigma_max_tens), abs(sigma_max_comp))
-u_max = float(np.max(disp_mags))
 elapsed_time = time.time() - t0
 
 json.dumps({
     "vertices": verts_mm.tolist(),
     "faces": faces.tolist(),
     "stresses_mpa": vertex_stresses_mpa,
-    "deflections_mm": vertex_deflections_mm,
+    "deflections_ux_mm": vertex_ux,
+    "deflections_uy_mm": vertex_uy,
+    "deflections_uz_mm": vertex_uz,
+    "deflections_umag_mm": vertex_umag,
     "sigma_max_abs": sigma_max_abs,
     "sigma_max_tens": sigma_max_tens,
     "sigma_max_comp": sigma_max_comp,
-    "u_max": u_max,
+    "ux_max_tens": float(np.max(vertex_ux)),
+    "ux_min_comp": float(np.min(vertex_ux)),
+    "uy_max_tens": float(np.max(vertex_uy)),
+    "uy_min_comp": float(np.min(vertex_uy)),
+    "uz_max_tens": float(np.max(vertex_uz)),
+    "uz_min_comp": float(np.min(vertex_uz)),
+    "umag_max_abs": float(np.max(vertex_umag)),
     "f_k": mat_props["f_k"],
     "f_d": mat_props["f_d"],
     "material_name": mat_props["material_name"],
