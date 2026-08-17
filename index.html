@@ -14,7 +14,6 @@
             -webkit-font-smoothing: antialiased;
         }
         
-        /* DBSW Custom Minimalist Scrollbar Palette */
         #sidebar::-webkit-scrollbar {
             width: 6px;
         }
@@ -499,6 +498,11 @@
     var forceArrows = [];
     var supportGizmos = [];
     var voidRegionGizmos = [];
+
+    // Minimalist Reference Triad Overlay Variables
+    var triadScene, triadCamera, triadAxes;
+    var TRIAD_SIZE = 90; // Inset size in pixels
+
     var currentVertices = [], currentFaces = [], currentStressesMPa = [], currentDeflectionsMM = [];
     
     // Explicit Asymmetric Stress Bounds Tracking
@@ -608,6 +612,20 @@
         clipPlaneZ.constant = parseFloat(document.getElementById('cut_z').value);
     }
 
+    function initTriad() {
+        triadScene = new THREE.Scene();
+        triadCamera = new THREE.PerspectiveCamera(50, 1, 1, 1000);
+        triadCamera.position.set(0, 0, 140);
+
+        // Minimalist 3D Axes: Red = X (Lx), Green = Y (Ly), Blue = Z (Lz)
+        triadAxes = new THREE.AxesHelper(45);
+        triadAxes.renderOrder = 1;
+        triadAxes.material.depthTest = false;
+        
+        triadScene.add(triadAxes);
+        triadScene.add(new THREE.AmbientLight(0xffffff, 1.0));
+    }
+
     function initThree() {
         var container = document.getElementById('viewport');
         scene = new THREE.Scene();
@@ -616,10 +634,11 @@
         camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 100000);
         camera.position.set(7000, 3000, 4000);
 
-        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(container.clientWidth, container.clientHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.localClippingEnabled = true;
+        renderer.autoClear = false;
         container.appendChild(renderer.domElement);
 
         controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -650,6 +669,7 @@
 
         applyLoadPreset();
         setupCutPlaneSliders();
+        initTriad();
         animate();
         updateDomainVisuals();
     }
@@ -657,7 +677,31 @@
     function animate() {
         requestAnimationFrame(animate);
         controls.update();
+
+        var container = document.getElementById('viewport');
+        var width = container.clientWidth;
+        var height = container.clientHeight;
+
+        // --- Pass 1: Render Primary 3D Scene ---
+        renderer.setViewport(0, 0, width, height);
+        renderer.setScissorTest(false);
+        renderer.setClearColor(0xffffff, 1.0);
+        renderer.clear();
         renderer.render(scene, camera);
+
+        // --- Pass 2: Render Inset Triad Overlay (Bottom-Left Corner) ---
+        if (triadCamera && camera) {
+            triadCamera.quaternion.copy(camera.quaternion);
+
+            var pad = 16;
+            renderer.setViewport(pad, pad, TRIAD_SIZE, TRIAD_SIZE);
+            renderer.setScissor(pad, pad, TRIAD_SIZE, TRIAD_SIZE);
+            renderer.setScissorTest(true);
+
+            renderer.clearDepth();
+            renderer.render(triadScene, triadCamera);
+            renderer.setScissorTest(false);
+        }
     }
 
     function onWindowResize() {
@@ -712,34 +756,19 @@
         updateDomainVisuals();
     }
 
-    // NEW: clears every row from the discrete point supports table in one
-    // click. This only affects the point-support table — it does not touch
-    // the separate Support Preset (cantilever / four corners / all edges)
-    // or the Custom Bounding Box restraint, which are independent
-    // restraint mechanisms defined above.
     function clearAllSupports() {
         var tbody = document.getElementById('support_table_body');
         tbody.innerHTML = '';
         updateDomainVisuals();
     }
 
-    // NEW: clears every row from the load table in one click. Combined with
-    // the solver_worker.js fix, this now genuinely means "solve with zero
-    // external load" rather than triggering a hidden default load.
     function clearAllLoads() {
         var tbody = document.getElementById('load_table_body');
         tbody.innerHTML = '';
-        // Switch the preset dropdown to "Custom" so it's clear the table
-        // is being manually managed rather than about to be repopulated by
-        // a preset the next time something else changes.
         document.getElementById('load_preset').value = 'custom';
         updateDomainVisuals();
     }
 
-    // NEW: Void / Forced-Solid passive region row management. These map
-    // directly onto domain.passive_mask in solver_worker.js — "void" pins
-    // an element's density to ~0, "solid" pins it to 1, overriding whatever
-    // the SIMP optimiser would otherwise choose for that region.
     function addVoidRegionRow(xMin, xMax, yMin, yMax, zMin, zMax, regionType) {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -863,23 +892,19 @@
         domainBox.position.set(Lx / 2.0, Lz / 2.0, Ly / 2.0);
         scene.add(domainBox);
 
-        // Clear existing support gizmos
         supportGizmos.forEach(function(g) { scene.remove(g); });
         supportGizmos = [];
 
         var size = Math.max(120, Lz * 0.22);
         var supMode = document.getElementById('support_mode').value;
 
-        // Shared Materials for Kinematic Primitives
-        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 }); // Emerald Green (Fixed/Pin XYZ)
-        var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 }); // Coral Red (Roller YZ)
+        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 });
+        var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 });
 
-        // --- 1. Preset Supports Rendering ---
         if (supMode === 'preset') {
             var preset = document.getElementById('support_preset').value;
             
             if (preset === 'cantilever') {
-                // Fixed Cantilever Wall Face (X = 0 mm)
                 var wallGeo = new THREE.BoxGeometry(size * 0.4, Lz, Ly);
                 var wallMesh = new THREE.Mesh(wallGeo, pinMat);
                 wallMesh.position.set(-size * 0.2, Lz / 2.0, Ly / 2.0);
@@ -887,7 +912,6 @@
                 supportGizmos.push(wallMesh);
 
             } else if (preset === 'four_corners') {
-                // Four Corner Pyramids at Z = 0
                 var cornerGeo = new THREE.ConeGeometry(size * 0.8, size, 4);
                 var corners = [[0, 0], [Lx, 0], [0, Ly], [Lx, Ly]];
                 corners.forEach(function(pt) {
@@ -898,9 +922,6 @@
                 });
 
             } else if (preset === 'all_edges') {
-                // All Bottom Edges Supported: thin restraint bars traced
-                // along the full perimeter of the Z = 0 face, mirroring the
-                // Python-side add_support_box calls in solver_worker.js.
                 var edgeT = Math.max(size * 0.28, Math.min(Lx, Ly) * 0.02);
                 var edgeH = size * 0.35;
                 var edgeGeoX = new THREE.BoxGeometry(Lx, edgeH, edgeT);
@@ -924,7 +945,6 @@
             }
         }
 
-        // --- 2. Custom Bounding Box Supports Rendering ---
         if (supportBoxVisual) scene.remove(supportBoxVisual);
         if (supMode === 'custom') {
             var xMin = parseFloat(document.getElementById('sup_x_min').value) || 0;
@@ -942,7 +962,6 @@
             supportGizmos.push(supMesh);
         }
 
-        // --- 3. Discrete Point Supports Table Entries (Pin Cones / Roller Cylinders) ---
         var pointSups = getPointSupportArrayData();
         var ptPinGeo = new THREE.ConeGeometry(size * 0.6, size * 0.8, 4);
         var ptRollerGeo = new THREE.CylinderGeometry(size * 0.25, size * 0.25, size * 0.8, 16);
@@ -952,11 +971,9 @@
             var ptMesh;
 
             if (isPin) {
-                // Full 3-DOF Restraint: Emerald Green Pyramid pointing to node
                 ptMesh = new THREE.Mesh(ptPinGeo, pinMat);
                 ptMesh.position.set(ps.x, ps.z - size * 0.4, ps.y);
             } else {
-                // Partial/Roller Restraint: Coral Red Transverse Cylinder
                 ptMesh = new THREE.Mesh(ptRollerGeo, rollerMat);
                 ptMesh.rotation.x = Math.PI / 2;
                 ptMesh.position.set(ps.x, ps.z - size * 0.25, ps.y);
@@ -966,7 +983,6 @@
             supportGizmos.push(ptMesh);
         });
 
-        // --- 4. Render Point Load Vectors ---
         forceArrows.forEach(function(a) { scene.remove(a); });
         forceArrows = [];
         getLoadArrayData().forEach(function(ld) {
@@ -982,11 +998,6 @@
             }
         });
 
-        // --- 5. Render Void / Forced-Solid Passive Region Boxes ---
-        // Deliberately distinct colours from supports (emerald/coral) and
-        // loads (red arrows): amber/translucent for Void keep-outs, blue/
-        // translucent for Forced Solid zones, so all three restraint types
-        // stay visually unambiguous at a glance.
         voidRegionGizmos.forEach(function(g) { scene.remove(g); });
         voidRegionGizmos = [];
         var voidFillMat = new THREE.MeshStandardMaterial({
@@ -1062,7 +1073,6 @@
             currentStressesMPa = data.data.stresses_mpa;
             currentDeflectionsMM = data.data.deflections_mm || [];
             
-            // Exact Asymmetric Peak Extraction
             currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_tens : Math.max(0.0, ...currentStressesMPa);
             currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : Math.min(0.0, ...currentStressesMPa);
             currentUMax = data.data.u_max;
@@ -1164,7 +1174,6 @@
         return val.toFixed(2) + " mm";
     }
 
-    /* Asymmetric Legend Label Mapping */
     function updateLegendLabels(isDeflectionMode) {
         var legendTitle = document.getElementById('legend-title');
         if (isDeflectionMode) {
@@ -1203,7 +1212,6 @@
         var positions = [];
         var colors = [];
 
-        /* Asymmetric Piecewise HSL Color Scaler Centered at Neutral Axis (0.0 MPa) */
         var colorScaleSignedAsymmetric = function(val, maxTens, minComp) {
             var h;
             if (val >= 0) {
