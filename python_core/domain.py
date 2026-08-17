@@ -51,8 +51,10 @@ class Domain3D:
         self.material_type = mat_lower
         self.material_name = material_name
 
-        # Unit weight converted from kN/m3 (Eurocode convention) to N/mm3
-        # (1 kN/m3 = 1000 N / 1e9 mm3 = 1e-6 N/mm3)
+        # Unit weight, converted from kN/m3 (Eurocode convention) to N/mm3
+        # (1 kN/m3 = 1000 N / 1e9 mm3 = 1e-6 N/mm3), used for the optional
+        # design-dependent self-weight body force. gamma_kn_m3 = 0.0 disables
+        # self-weight entirely.
         self.gamma_kn_m3 = float(gamma_kn_m3)
         self.gamma_n_mm3 = self.gamma_kn_m3 * 1e-6
 
@@ -67,17 +69,13 @@ class Domain3D:
         return np.arange(self.n_nodes).reshape((self.nx + 1, self.ny + 1, self.nz + 1))
 
     def add_support_box(self, x_bounds, y_bounds, z_bounds, dofs="xyz"):
-        """
-        Restrains DOFs within geometric bounds using a scale-relative tolerance (eps)
-        and protects surrounding elements into the solid passive mask.
-        """
+        """Restrains DOFs and protects surrounding elements as solid passive mask."""
         x_min, x_max = min(x_bounds), max(x_bounds)
         y_min, y_max = min(y_bounds), max(y_bounds)
         z_min, z_max = min(z_bounds), max(z_bounds)
 
         nodenrs = self._get_node_grid()
-        # Scale-relative geometric tolerance to ensure strict coordinate boundary inclusion
-        eps = 1e-3 * min(self.dx, self.dy, self.dz)
+        eps = 1e-2
 
         for ix in range(self.nx + 1):
             px = ix * self.dx
@@ -127,7 +125,7 @@ class Domain3D:
         z_min, z_max = min(z_bounds), max(z_bounds)
 
         nodenrs = self._get_node_grid()
-        eps = 1e-3 * min(self.dx, self.dy, self.dz)
+        eps = 1e-2
 
         target_nodes = []
         for ix in range(self.nx + 1):
