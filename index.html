@@ -512,6 +512,9 @@
     var clipPlaneY = new THREE.Plane(new THREE.Vector3(0, 0, -1), 300);
     var clipPlaneZ = new THREE.Plane(new THREE.Vector3(0, -1, 0), 600);
 
+    // Minimalistic black/white 3D axis triad (screen-corner gizmo)
+    var axesScene, axesCamera, axesGroup;
+
     var STEEL_GRADES = ["S235", "S275", "S355", "S460"];
     var CONCRETE_GRADES = ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50", "C50/60"];
     var TIMBER_GRADES = ["C16", "C24", "C30", "GL24h", "GL28h", "GL32h"];
@@ -638,6 +641,65 @@
         grid.position.y = -1;
         scene.add(grid);
 
+        // --- Minimalistic black/white axis triad (bottom-left corner) ---
+        // Domain coords: X → Three.X, Z(height) → Three.Y, Y(width) → Three.Z
+        axesScene = new THREE.Scene();
+        axesCamera = new THREE.OrthographicCamera(-2.0, 2.0, 2.0, -2.0, 0.1, 10);
+        axesCamera.position.set(0, 0, 5);
+        axesCamera.lookAt(0, 0, 0);
+
+        axesGroup = new THREE.Group();
+        axesScene.add(axesGroup);
+
+        var axisLen = 1.2;
+        var axisMat = new THREE.LineBasicMaterial({ color: 0x000000 });
+
+        function addAxisLine(to) {
+            var geo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, 0), to
+            ]);
+            axesGroup.add(new THREE.Line(geo, axisMat));
+        }
+        addAxisLine(new THREE.Vector3(axisLen, 0, 0)); // X
+        addAxisLine(new THREE.Vector3(0, axisLen, 0)); // Z (up)
+        addAxisLine(new THREE.Vector3(0, 0, axisLen)); // Y
+
+        function makeAxisLabel(text) {
+            var canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            var ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, 128, 128);
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 72px "Helvetica Neue", Helvetica, Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 64, 68);
+            var tex = new THREE.CanvasTexture(canvas);
+            tex.needsUpdate = true;
+            var mat = new THREE.SpriteMaterial({
+                map: tex,
+                transparent: true,
+                depthTest: false,
+                depthWrite: false
+            });
+            var sprite = new THREE.Sprite(mat);
+            sprite.scale.set(0.55, 0.55, 1);
+            return sprite;
+        }
+
+        var lblX = makeAxisLabel('X');
+        lblX.position.set(axisLen + 0.35, 0, 0);
+        axesGroup.add(lblX);
+
+        var lblZ = makeAxisLabel('Z');
+        lblZ.position.set(0, axisLen + 0.35, 0);
+        axesGroup.add(lblZ);
+
+        var lblY = makeAxisLabel('Y');
+        lblY.position.set(0, 0, axisLen + 0.35);
+        axesGroup.add(lblY);
+
         window.addEventListener('resize', onWindowResize);
         updateMaterialUI();
 
@@ -658,6 +720,28 @@
         requestAnimationFrame(animate);
         controls.update();
         renderer.render(scene, camera);
+
+        // Axis triad: orient to world axes as seen by the main camera, draw in corner
+        if (axesGroup && axesScene && axesCamera) {
+            axesGroup.quaternion.copy(camera.quaternion).invert();
+
+            var size = 110;
+            var margin = 16;
+            var container = document.getElementById('viewport');
+            var w = container.clientWidth;
+            var h = container.clientHeight;
+
+            // Prevent the second render from clearing the scissor region to black
+            renderer.autoClear = false;
+            renderer.clearDepth();
+            renderer.setScissorTest(true);
+            renderer.setScissor(margin, margin, size, size);
+            renderer.setViewport(margin, margin, size, size);
+            renderer.render(axesScene, axesCamera);
+            renderer.setScissorTest(false);
+            renderer.setViewport(0, 0, w, h);
+            renderer.autoClear = true;
+        }
     }
 
     function onWindowResize() {
