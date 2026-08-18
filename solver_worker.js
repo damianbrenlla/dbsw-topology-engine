@@ -262,29 +262,39 @@ opt.x = xnew
             postMessage({ status: "running", current_iter: iterations, total_iter: iterations, phase: "Extracting mesh & recovering fields" });
 
             // 3. Final solve on x_final + mesh extraction + stress/displacement field
-            // recovery. Mirrors section 7 of app.py.
+            // recovery. Corrected Isosurface Sampling & Field Index Alignment.
             const resultJson = await pyodide.runPythonAsync(`
 U_final, K_final, _ = opt.assemble_and_solve_static(opt.x, include_self_weight=include_self_weight)
 
 padded_x = np.pad(opt.x, 1, mode="constant", constant_values=0)
 verts, faces, _, _ = measure.marching_cubes(padded_x, level=0.50)
 
+# 1. Stress Field Recovery
 elem_stresses_mpa = opt.recover_element_stress_field(U_final)
 stress_grid_3d = elem_stresses_mpa.reshape((domain.nx, domain.ny, domain.nz))
-padded_stress = np.pad(stress_grid_3d, 1, mode="edge")
 
+# 2. Displacement Field Recovery (Convert to mm)
 U_nodes, disp_mags = opt.recover_nodal_displacements(U_final)
-disp_grid_3d = disp_mags.reshape((domain.nx + 1, domain.ny + 1, domain.nz + 1))
-padded_disp = np.pad(disp_grid_3d, 1, mode="edge")
+uz_grid = (U_nodes[:, 2] * 1000.0).reshape((domain.nx + 1, domain.ny + 1, domain.nz + 1))
 
 vertex_stresses_mpa = []
 vertex_deflections_mm = []
+
 for v in verts:
-    ix = int(np.clip(round(v[0]), 0, domain.nx + 1))
-    iy = int(np.clip(round(v[1]), 0, domain.ny + 1))
-    iz = int(np.clip(round(v[2]), 0, domain.nz + 1))
-    vertex_stresses_mpa.append(float(padded_stress[ix, iy, iz]))
-    vertex_deflections_mm.append(float(padded_disp[ix, iy, iz]))
+    # Subtract 1.0 offset to compensate for np.pad(1) on marching cubes input
+    # v[0] -> ex (X), v[1] -> ey (Y_width), v[2] -> ez (Z_height)
+    ex = int(np.clip(round(v[0] - 1.0), 0, domain.nx - 1))
+    ey = int(np.clip(round(v[1] - 1.0), 0, domain.ny - 1))
+    ez = int(np.clip(round(v[2] - 1.0), 0, domain.nz - 1))
+    
+    # Sample element stress at centroid
+    vertex_stresses_mpa.append(float(stress_grid_3d[ex, ey, ez]))
+    
+    # Sample physical vertical deflection (Uz) at closest node index
+    nx_i = int(np.clip(round(v[0] - 1.0), 0, domain.nx))
+    ny_i = int(np.clip(round(v[1] - 1.0), 0, domain.ny))
+    nz_i = int(np.clip(round(v[2] - 1.0), 0, domain.nz))
+    vertex_deflections_mm.append(float(abs(uz_grid[nx_i, ny_i, nz_i])))
 
 verts_mm = np.copy(verts)
 verts_mm[:, 0] = (verts[:, 0] - 1.0) * domain.dx
@@ -302,18 +312,11 @@ else:
 
 sigma_max_abs = max(abs(sigma_max_tens), abs(sigma_max_comp))
 
-# FIX: u_max previously came from disp_mags, the max over EVERY node in the
-# full domain grid — including nodes inside low-density "ghost" material
-# that the marching-cubes isosurface (threshold 0.5) never actually renders.
-# That let the legend claim a peak (e.g. "14.01mm = red") that no visible
-# point on the mesh could ever reach, since the rendered colours are sampled
-# from vertex_deflections_mm — the extracted surface's own vertices — not
-# from disp_mags. Scaling the legend from the same array that's actually
-# painted on the mesh guarantees the two can never disagree.
+# Bound legend scale strictly to rendered surface vertices
 if len(vertex_deflections_mm) > 0:
-    u_max = float(np.max(np.abs(vertex_deflections_mm)))
+    u_max = float(np.max(vertex_deflections_mm))
 else:
-    u_max = float(np.max(disp_mags))
+    u_max = float(np.max(disp_mags * 1000.0))
 
 elapsed_time = time.time() - t0
 
