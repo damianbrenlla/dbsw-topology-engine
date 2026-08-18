@@ -3,7 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DBSW — 3D Topology Engine (Client-Side WASM)</title>
+    
+    <!-- 1. SEO Primary Metadata -->
+    <title>3D SIMP Topology Optimisation Engine | WebAssembly FEA — DBSW</title>
+    <meta name="description" content="Browser-native 3D SIMP structural topology optimisation engine powered by Python and WebAssembly. Features Eurocode 2/3/5 material logic, non-linear continuum mechanics, and interactive 3D section cut-planes.">
+    <meta name="keywords" content="Structural Topology Optimisation, 3D SIMP FEA, WebAssembly Finite Element Analysis, Eurocode Structural Engineering, Low Carbon Structural Design, Strut and Tie Model Generator, DBSW Engineering">
+    <meta name="author" content="Damian Brenlla / DBSW">
+    <link rel="canonical" href="https://topology.dbsw.uk/" />
+
+    <!-- 2. Open Graph / Social Audit Metadata (LinkedIn / Twitter Preview Cards) -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="DBSW Engineering">
+    <meta property="og:title" content="DBSW 3D Topology Engine — Client-Side WASM FEA">
+    <meta property="og:description" content="Interactive first-principles 3D continuum mechanics & topology optimisation running entirely in the browser via Pyodide/Wasm. Eurocode compliant design exploration.">
+    <meta property="og:url" content="https://topology.dbsw.uk/">
+    <meta property="og:image" content="https://topology.dbsw.uk/assets/og-preview.jpg">
+
+    <!-- 3. Structured Data (JSON-LD for Technical Authority & Search Rich Snippets) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "DBSW 3D SIMP Topology Engine",
+      "operatingSystem": "WebBrowser",
+      "applicationCategory": "EngineeringApplication",
+      "offers": {
+        "@type": "Offer",
+        "price": "0.00",
+        "priceCurrency": "GBP"
+      },
+      "author": {
+        "@type": "Person",
+        "name": "Damian Brenlla",
+        "url": "https://dbsw.uk"
+      },
+      "description": "Client-side WebAssembly solver for 3D structural SIMP topology optimisation, compliance minimisation, and Eurocode stress recovery."
+    }
+    </script>
+
     <style>
         * { box-sizing: border-box; }
         body {
@@ -228,7 +265,7 @@
             <option value="steel">Structural Steel — BS EN 1993-1-1 (EC3)</option>
             <option value="timber">Timber / Glulam — BS EN 1995-1-1 (EC5)</option>
             <option value="masonry">Structural Masonry — BS EN 1996-1-1 (EC6)</option>
-            <option value="stone">Natural Stone Masonry — BS EN 1996-1-1</option>
+            <option value="stone">Natural Stone Masonry — BS EN 1996-1-1 (EC6)</option>
             <option value="generic">Custom / Generic Isotropic Material</option>
         </select>
     </div>
@@ -796,34 +833,19 @@
         updateDomainVisuals();
     }
 
-    // NEW: clears every row from the discrete point supports table in one
-    // click. This only affects the point-support table — it does not touch
-    // the separate Support Preset (cantilever / four corners / all edges)
-    // or the Custom Bounding Box restraint, which are independent
-    // restraint mechanisms defined above.
     function clearAllSupports() {
         var tbody = document.getElementById('support_table_body');
         tbody.innerHTML = '';
         updateDomainVisuals();
     }
 
-    // NEW: clears every row from the load table in one click. Combined with
-    // the solver_worker.js fix, this now genuinely means "solve with zero
-    // external load" rather than triggering a hidden default load.
     function clearAllLoads() {
         var tbody = document.getElementById('load_table_body');
         tbody.innerHTML = '';
-        // Switch the preset dropdown to "Custom" so it's clear the table
-        // is being manually managed rather than about to be repopulated by
-        // a preset the next time something else changes.
         document.getElementById('load_preset').value = 'custom';
         updateDomainVisuals();
     }
 
-    // NEW: Void / Forced-Solid passive region row management. These map
-    // directly onto domain.passive_mask in solver_worker.js — "void" pins
-    // an element's density to ~0, "solid" pins it to 1, overriding whatever
-    // the SIMP optimiser would otherwise choose for that region.
     function addVoidRegionRow(xMin, xMax, yMin, yMax, zMin, zMax, regionType) {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -934,7 +956,6 @@
         return supports;
     }
 
-    /* Universal 3D Support Visualiser (Presets, Custom Bounding Boxes & Point Support Table) */
     function updateDomainVisuals() {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -947,23 +968,19 @@
         domainBox.position.set(Lx / 2.0, Lz / 2.0, Ly / 2.0);
         scene.add(domainBox);
 
-        // Clear existing support gizmos
         supportGizmos.forEach(function(g) { scene.remove(g); });
         supportGizmos = [];
 
         var size = Math.max(120, Lz * 0.22);
         var supMode = document.getElementById('support_mode').value;
 
-        // Shared Materials for Kinematic Primitives
-        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 }); // Emerald Green (Fixed/Pin XYZ)
-        var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 }); // Coral Red (Roller YZ)
+        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 });
+        var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 });
 
-        // --- 1. Preset Supports Rendering ---
         if (supMode === 'preset') {
             var preset = document.getElementById('support_preset').value;
             
             if (preset === 'cantilever') {
-                // Fixed Cantilever Wall Face (X = 0 mm)
                 var wallGeo = new THREE.BoxGeometry(size * 0.4, Lz, Ly);
                 var wallMesh = new THREE.Mesh(wallGeo, pinMat);
                 wallMesh.position.set(-size * 0.2, Lz / 2.0, Ly / 2.0);
@@ -971,7 +988,6 @@
                 supportGizmos.push(wallMesh);
 
             } else if (preset === 'four_corners') {
-                // Four Corner Pyramids at Z = 0
                 var cornerGeo = new THREE.ConeGeometry(size * 0.8, size, 4);
                 var corners = [[0, 0], [Lx, 0], [0, Ly], [Lx, Ly]];
                 corners.forEach(function(pt) {
@@ -982,9 +998,6 @@
                 });
 
             } else if (preset === 'all_edges') {
-                // All Bottom Edges Supported: thin restraint bars traced
-                // along the full perimeter of the Z = 0 face, mirroring the
-                // Python-side add_support_box calls in solver_worker.js.
                 var edgeT = Math.max(size * 0.28, Math.min(Lx, Ly) * 0.02);
                 var edgeH = size * 0.35;
                 var edgeGeoX = new THREE.BoxGeometry(Lx, edgeH, edgeT);
@@ -1008,7 +1021,6 @@
             }
         }
 
-        // --- 2. Custom Bounding Box Supports Rendering ---
         if (supportBoxVisual) scene.remove(supportBoxVisual);
         if (supMode === 'custom') {
             var xMin = parseFloat(document.getElementById('sup_x_min').value) || 0;
@@ -1026,7 +1038,6 @@
             supportGizmos.push(supMesh);
         }
 
-        // --- 3. Discrete Point Supports Table Entries (Pin Cones / Roller Cylinders) ---
         var pointSups = getPointSupportArrayData();
         var ptPinGeo = new THREE.ConeGeometry(size * 0.6, size * 0.8, 4);
         var ptRollerGeo = new THREE.CylinderGeometry(size * 0.25, size * 0.25, size * 0.8, 16);
@@ -1036,11 +1047,9 @@
             var ptMesh;
 
             if (isPin) {
-                // Full 3-DOF Restraint: Emerald Green Pyramid pointing to node
                 ptMesh = new THREE.Mesh(ptPinGeo, pinMat);
                 ptMesh.position.set(ps.x, ps.z - size * 0.4, ps.y);
             } else {
-                // Partial/Roller Restraint: Coral Red Transverse Cylinder
                 ptMesh = new THREE.Mesh(ptRollerGeo, rollerMat);
                 ptMesh.rotation.x = Math.PI / 2;
                 ptMesh.position.set(ps.x, ps.z - size * 0.25, ps.y);
@@ -1050,7 +1059,6 @@
             supportGizmos.push(ptMesh);
         });
 
-        // --- 4. Render Point Load Vectors ---
         forceArrows.forEach(function(a) { scene.remove(a); });
         forceArrows = [];
         getLoadArrayData().forEach(function(ld) {
@@ -1066,11 +1074,6 @@
             }
         });
 
-        // --- 5. Render Void / Forced-Solid Passive Region Boxes ---
-        // Deliberately distinct colours from supports (emerald/coral) and
-        // loads (red arrows): amber/translucent for Void keep-outs, blue/
-        // translucent for Forced Solid zones, so all three restraint types
-        // stay visually unambiguous at a glance.
         voidRegionGizmos.forEach(function(g) { scene.remove(g); });
         voidRegionGizmos = [];
         var voidFillMat = new THREE.MeshStandardMaterial({
@@ -1146,7 +1149,6 @@
             currentStressesMPa = data.data.stresses_mpa;
             currentDeflectionsMM = data.data.deflections_mm || [];
             
-            // Exact Asymmetric Peak Extraction
             currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_tens : Math.max(0.0, ...currentStressesMPa);
             currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : Math.min(0.0, ...currentStressesMPa);
             currentUMax = data.data.u_max;
@@ -1248,7 +1250,6 @@
         return val.toFixed(2) + " mm";
     }
 
-    /* Asymmetric Legend Label Mapping */
     function updateLegendLabels(isDeflectionMode) {
         var legendTitle = document.getElementById('legend-title');
         if (isDeflectionMode) {
@@ -1287,7 +1288,6 @@
         var positions = [];
         var colors = [];
 
-        /* Asymmetric Piecewise HSL Color Scaler Centered at Neutral Axis (0.0 MPa) */
         var colorScaleSignedAsymmetric = function(val, maxTens, minComp) {
             var h;
             if (val >= 0) {
@@ -1303,7 +1303,7 @@
         };
 
         var colorScaleUnsigned = function(val, maxVal) {
-            var norm = Math.min(Math.max(val / maxVal, 0.0), 1.0);
+            var norm = (maxVal > 1e-6) ? Math.min(Math.max(val / maxVal, 0.0), 1.0) : 0.0;
             var h = (1.0 - norm) * 240.0 / 360.0;
             var c = new THREE.Color(); 
             c.setHSL(h, 0.85, 0.45); 
