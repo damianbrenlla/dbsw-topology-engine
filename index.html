@@ -796,19 +796,34 @@
         updateDomainVisuals();
     }
 
+    // NEW: clears every row from the discrete point supports table in one
+    // click. This only affects the point-support table — it does not touch
+    // the separate Support Preset (cantilever / four corners / all edges)
+    // or the Custom Bounding Box restraint, which are independent
+    // restraint mechanisms defined above.
     function clearAllSupports() {
         var tbody = document.getElementById('support_table_body');
         tbody.innerHTML = '';
         updateDomainVisuals();
     }
 
+    // NEW: clears every row from the load table in one click. Combined with
+    // the solver_worker.js fix, this now genuinely means "solve with zero
+    // external load" rather than triggering a hidden default load.
     function clearAllLoads() {
         var tbody = document.getElementById('load_table_body');
         tbody.innerHTML = '';
+        // Switch the preset dropdown to "Custom" so it's clear the table
+        // is being manually managed rather than about to be repopulated by
+        // a preset the next time something else changes.
         document.getElementById('load_preset').value = 'custom';
         updateDomainVisuals();
     }
 
+    // NEW: Void / Forced-Solid passive region row management. These map
+    // directly onto domain.passive_mask in solver_worker.js — "void" pins
+    // an element's density to ~0, "solid" pins it to 1, overriding whatever
+    // the SIMP optimiser would otherwise choose for that region.
     function addVoidRegionRow(xMin, xMax, yMin, yMax, zMin, zMax, regionType) {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -919,6 +934,7 @@
         return supports;
     }
 
+    /* Universal 3D Support Visualiser (Presets, Custom Bounding Boxes & Point Support Table) */
     function updateDomainVisuals() {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -931,19 +947,23 @@
         domainBox.position.set(Lx / 2.0, Lz / 2.0, Ly / 2.0);
         scene.add(domainBox);
 
+        // Clear existing support gizmos
         supportGizmos.forEach(function(g) { scene.remove(g); });
         supportGizmos = [];
 
         var size = Math.max(120, Lz * 0.22);
         var supMode = document.getElementById('support_mode').value;
 
-        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 });
-        var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 });
+        // Shared Materials for Kinematic Primitives
+        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 }); // Emerald Green (Fixed/Pin XYZ)
+        var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 }); // Coral Red (Roller YZ)
 
+        // --- 1. Preset Supports Rendering ---
         if (supMode === 'preset') {
             var preset = document.getElementById('support_preset').value;
             
             if (preset === 'cantilever') {
+                // Fixed Cantilever Wall Face (X = 0 mm)
                 var wallGeo = new THREE.BoxGeometry(size * 0.4, Lz, Ly);
                 var wallMesh = new THREE.Mesh(wallGeo, pinMat);
                 wallMesh.position.set(-size * 0.2, Lz / 2.0, Ly / 2.0);
@@ -951,6 +971,7 @@
                 supportGizmos.push(wallMesh);
 
             } else if (preset === 'four_corners') {
+                // Four Corner Pyramids at Z = 0
                 var cornerGeo = new THREE.ConeGeometry(size * 0.8, size, 4);
                 var corners = [[0, 0], [Lx, 0], [0, Ly], [Lx, Ly]];
                 corners.forEach(function(pt) {
@@ -961,6 +982,9 @@
                 });
 
             } else if (preset === 'all_edges') {
+                // All Bottom Edges Supported: thin restraint bars traced
+                // along the full perimeter of the Z = 0 face, mirroring the
+                // Python-side add_support_box calls in solver_worker.js.
                 var edgeT = Math.max(size * 0.28, Math.min(Lx, Ly) * 0.02);
                 var edgeH = size * 0.35;
                 var edgeGeoX = new THREE.BoxGeometry(Lx, edgeH, edgeT);
@@ -984,6 +1008,7 @@
             }
         }
 
+        // --- 2. Custom Bounding Box Supports Rendering ---
         if (supportBoxVisual) scene.remove(supportBoxVisual);
         if (supMode === 'custom') {
             var xMin = parseFloat(document.getElementById('sup_x_min').value) || 0;
@@ -1001,6 +1026,7 @@
             supportGizmos.push(supMesh);
         }
 
+        // --- 3. Discrete Point Supports Table Entries (Pin Cones / Roller Cylinders) ---
         var pointSups = getPointSupportArrayData();
         var ptPinGeo = new THREE.ConeGeometry(size * 0.6, size * 0.8, 4);
         var ptRollerGeo = new THREE.CylinderGeometry(size * 0.25, size * 0.25, size * 0.8, 16);
@@ -1010,9 +1036,11 @@
             var ptMesh;
 
             if (isPin) {
+                // Full 3-DOF Restraint: Emerald Green Pyramid pointing to node
                 ptMesh = new THREE.Mesh(ptPinGeo, pinMat);
                 ptMesh.position.set(ps.x, ps.z - size * 0.4, ps.y);
             } else {
+                // Partial/Roller Restraint: Coral Red Transverse Cylinder
                 ptMesh = new THREE.Mesh(ptRollerGeo, rollerMat);
                 ptMesh.rotation.x = Math.PI / 2;
                 ptMesh.position.set(ps.x, ps.z - size * 0.25, ps.y);
@@ -1022,6 +1050,7 @@
             supportGizmos.push(ptMesh);
         });
 
+        // --- 4. Render Point Load Vectors ---
         forceArrows.forEach(function(a) { scene.remove(a); });
         forceArrows = [];
         getLoadArrayData().forEach(function(ld) {
@@ -1037,6 +1066,11 @@
             }
         });
 
+        // --- 5. Render Void / Forced-Solid Passive Region Boxes ---
+        // Deliberately distinct colours from supports (emerald/coral) and
+        // loads (red arrows): amber/translucent for Void keep-outs, blue/
+        // translucent for Forced Solid zones, so all three restraint types
+        // stay visually unambiguous at a glance.
         voidRegionGizmos.forEach(function(g) { scene.remove(g); });
         voidRegionGizmos = [];
         var voidFillMat = new THREE.MeshStandardMaterial({
@@ -1281,7 +1315,6 @@
 
         currentFaces.forEach(function(f) {
             var p1 = currentVertices[f[0]], p2 = currentVertices[f[1]], p3 = currentVertices[f[2]];
-            // Correct spatial coordinate mapping from Python (X, Y_width, Z_height) to Three.js (X, Z_height, Y_width)
             positions.push(p1[0], p1[2], p1[1]);
             positions.push(p2[0], p2[2], p2[1]);
             positions.push(p3[0], p3[2], p3[1]);
