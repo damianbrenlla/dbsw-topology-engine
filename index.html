@@ -265,7 +265,7 @@
             <option value="steel">Structural Steel — BS EN 1993-1-1 (EC3)</option>
             <option value="timber">Timber / Glulam — BS EN 1995-1-1 (EC5)</option>
             <option value="masonry">Structural Masonry — BS EN 1996-1-1 (EC6)</option>
-            <option value="stone">Natural Stone Masonry — BS EN 1996-1-1</option>
+            <option value="stone">Natural Stone Masonry — BS EN 1996-1-1 (EC6)</option>
             <option value="generic">Custom / Generic Isotropic Material</option>
         </select>
     </div>
@@ -1263,7 +1263,7 @@
             legendTitle.innerText = "Stress Map (MPa)";
             document.getElementById('lbl-100').innerText = "+" + formatMPa(currentSigmaMaxTens) + " (Max Tens)";
             document.getElementById('lbl-075').innerText = "+" + formatMPa(currentSigmaMaxTens * 0.50);
-            document.getElementById('lbl-050').innerText = "0.0 MPa (Neutral Axis)";
+            document.getElementById('lbl-050').innerText = "0.0 MPa";
             document.getElementById('lbl-025').innerText = formatMPa(currentSigmaMaxComp * 0.50);
             document.getElementById('lbl-000').innerText = formatMPa(currentSigmaMaxComp) + " (Max Comp)";
         }
