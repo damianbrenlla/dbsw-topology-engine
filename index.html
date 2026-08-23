@@ -473,9 +473,11 @@
 
     <button id="btn-exec" class="btn-primary" onclick="startOptimisation()" disabled>Loading Wasm Engine…</button>
     <button id="btn-stop" class="btn-stop" onclick="stopOptimisation()">■ Stop / Reset Engine</button>
-    <div style="display: flex; gap: 6px; margin-top: 4px;">
-        <button id="btn-export" class="btn-secondary" style="flex: 1;" onclick="exportSTL()" disabled>Export .STL Geometry</button>
-        <button id="btn-clear" class="btn-secondary-danger" style="flex: 1; display: none;" onclick="clearResults()">Clear Results</button>
+    
+    <!-- Results Actions Group: Hidden by default until solve completes -->
+    <div id="results-actions-group" style="display: none; gap: 6px; margin-top: 4px;">
+        <button id="btn-export" class="btn-secondary" style="flex: 1;" onclick="exportSTL()">Export .STL Geometry</button>
+        <button id="btn-clear" class="btn-secondary-danger" style="flex: 1;" onclick="clearResults()">Clear Results</button>
     </div>
 
     <div id="status">Initialising WebAssembly Python runtime…</div>
@@ -1120,8 +1122,7 @@
         var status = document.getElementById('status');
         var btnExec = document.getElementById('btn-exec');
         var btnStop = document.getElementById('btn-stop');
-        var btnExport = document.getElementById('btn-export');
-        var btnClear = document.getElementById('btn-clear');
+        var actionsGroup = document.getElementById('results-actions-group');
 
         if (data.status === 'log') {
             status.style.color = "#000000";
@@ -1148,8 +1149,7 @@
             btnExec.disabled = false;
             btnExec.innerText = "Execute Optimisation";
             btnStop.style.display = 'none';
-            btnExport.disabled = false;
-            btnClear.style.display = 'block';
+            actionsGroup.style.display = 'flex';
 
             currentVertices = data.data.vertices;
             currentFaces = data.data.faces;
@@ -1186,8 +1186,7 @@
 
         document.getElementById('btn-exec').disabled = true;
         document.getElementById('btn-stop').style.display = 'block';
-        document.getElementById('btn-export').disabled = true;
-        document.getElementById('btn-clear').style.display = 'none';
+        document.getElementById('results-actions-group').style.display = 'none';
 
         var dofs = '';
         if (document.getElementById('dof_x').checked) dofs += 'x';
@@ -1240,7 +1239,7 @@
         document.getElementById('btn-stop').style.display = 'none';
         document.getElementById('btn-exec').disabled = true;
         document.getElementById('btn-exec').innerText = "Loading Wasm Engine…";
-        document.getElementById('btn-clear').style.display = 'none';
+        document.getElementById('results-actions-group').style.display = 'none';
         engineReady = false;
 
         if (worker) worker.terminate();
@@ -1259,8 +1258,7 @@
         }
 
         document.getElementById('legend').style.display = 'none';
-        document.getElementById('btn-export').disabled = true;
-        document.getElementById('btn-clear').style.display = 'none';
+        document.getElementById('results-actions-group').style.display = 'none';
 
         var status = document.getElementById('status');
         status.style.color = "#000000";
