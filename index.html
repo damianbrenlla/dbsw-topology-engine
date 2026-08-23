@@ -77,9 +77,11 @@
         .brand-logo-img {
             height: 18px;
             width: auto;
+            max-width: 100%;
             display: block;
             margin-bottom: 6px;
             object-fit: contain;
+            object-position: left center;
         }
 
         .subtitle { font-size: 0.72rem; color: #666666; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; }
@@ -199,8 +201,8 @@
 
 <div id="intro-overlay">
     <div id="intro-modal">
-        <!-- Logo Graphic Image -->
-        <img src="assets/DBSW2 Page 001 Web.jpg" alt="DBSW Engineering" class="brand-logo-img">
+        <!-- Percent-encoded image path to handle spaces safely across all HTTP servers -->
+        <img src="assets/DBSW2%20Page%20001%20Web.jpg" alt="DBSW Engineering" class="brand-logo-img">
         <div class="subtitle">3D SIMP Topology Engine — Client-Side WASM</div>
 
         <p>
@@ -235,8 +237,8 @@
 
 <div id="sidebar">
     <div>
-        <!-- Logo Graphic Image -->
-        <img src="assets/DBSW2 Page 001 Web.jpg" alt="DBSW Engineering" class="brand-logo-img">
+        <!-- Percent-encoded image path to handle spaces safely across all HTTP servers -->
+        <img src="assets/DBSW2%20Page%20001%20Web.jpg" alt="DBSW Engineering" class="brand-logo-img">
         <div class="subtitle">3D SIMP Topology Engine — Client-Side WASM</div>
     </div>
 
