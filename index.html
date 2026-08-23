@@ -718,11 +718,6 @@
         window.addEventListener('resize', onWindowResize);
         updateMaterialUI();
 
-        var tbody = document.getElementById('support_table_body');
-        if (tbody && tbody.children.length === 0) {
-            addSupportRow(0, 150, 0, 'xyz');
-            addSupportRow(6000, 150, 0, 'yz');
-        }
 
         applyLoadPreset();
         setupCutPlaneSliders();
