@@ -72,7 +72,14 @@
             flex-direction: column; gap: 12px; overflow-y: auto; z-index: 10;
         }
         #viewport { flex: 1; position: relative; background: #ffffff; }
-        h2 { margin: 0 0 2px 0; font-size: 0.95rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #000000; }
+        
+        .brand-logo-svg {
+            height: 28px;
+            width: auto;
+            display: block;
+            margin-bottom: 4px;
+        }
+
         .subtitle { font-size: 0.72rem; color: #666666; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.8px; }
         .control-group { display: flex; flex-direction: column; gap: 4px; }
         label { font-size: 0.75rem; color: #444444; font-weight: 500; letter-spacing: 0.2px; }
@@ -173,7 +180,6 @@
             max-width: 460px; width: 90%; padding: 28px 28px 22px 28px;
             box-shadow: 0px 8px 24px rgba(0,0,0,0.25);
         }
-        #intro-modal h2 { margin: 0 0 2px 0; letter-spacing: 1.5px; }
         #intro-modal .subtitle { margin-bottom: 16px; }
         #intro-modal p { font-size: 0.82rem; line-height: 1.5; color: #222222; margin: 0 0 14px 0; }
         #intro-modal ul { margin: 0 0 16px 0; padding-left: 18px; }
@@ -191,7 +197,13 @@
 
 <div id="intro-overlay">
     <div id="intro-modal">
-        <h2>DBSW</h2>
+        <!-- DBSW Vector Wordmark SVG -->
+        <svg class="brand-logo-svg" viewBox="0 0 505 100" xmlns="http://www.w3.org/2000/svg" style="height: 32px;">
+            <path fill="#000000" d="M 0,0 L 52,0 C 95,0 115,16 115,50 C 115,84 95,100 52,100 L 0,100 Z M 36,25 L 36,75 L 50,75 C 72,75 78,68 78,50 C 78,32 72,25 50,25 Z"/>
+            <path fill="#000000" d="M 125,0 L 180,0 C 205,0 218,10 218,27 C 218,37 210,45 198,48 C 212,51 222,60 222,73 C 222,90 208,100 180,100 L 125,100 Z M 160,22 L 160,39 L 176,39 C 185,39 190,35 190,30 C 190,25 185,22 176,22 Z M 160,59 L 160,78 L 178,78 C 188,78 193,73 193,68 C 193,63 188,59 178,59 Z"/>
+            <path fill="#000000" d="M 235,12 C 235,4 246,0 278,0 C 310,0 322,4 322,18 L 290,20 C 290,17 286,15 278,15 C 270,15 266,17 266,21 C 266,27 274,29 294,33 C 316,37 325,46 325,62 C 325,88 305,100 278,100 C 250,100 232,88 232,65 L 263,63 C 263,78 269,82 278,82 C 287,82 293,78 293,71 C 293,64 285,62 265,58 C 243,54 235,43 235,26 Z"/>
+            <path fill="#000000" d="M 335,0 L 368,0 L 388,68 L 408,0 L 432,0 L 452,68 L 472,0 L 505,0 L 472,100 L 440,100 L 420,35 L 400,100 L 368,100 Z"/>
+        </svg>
         <div class="subtitle">3D SIMP Topology Engine — Client-Side WASM</div>
 
         <p>
@@ -226,7 +238,13 @@
 
 <div id="sidebar">
     <div>
-        <h2>DBSW</h2>
+        <!-- DBSW Vector Wordmark SVG -->
+        <svg class="brand-logo-svg" viewBox="0 0 505 100" xmlns="http://www.w3.org/2000/svg">
+            <path fill="#000000" d="M 0,0 L 52,0 C 95,0 115,16 115,50 C 115,84 95,100 52,100 L 0,100 Z M 36,25 L 36,75 L 50,75 C 72,75 78,68 78,50 C 78,32 72,25 50,25 Z"/>
+            <path fill="#000000" d="M 125,0 L 180,0 C 205,0 218,10 218,27 C 218,37 210,45 198,48 C 212,51 222,60 222,73 C 222,90 208,100 180,100 L 125,100 Z M 160,22 L 160,39 L 176,39 C 185,39 190,35 190,30 C 190,25 185,22 176,22 Z M 160,59 L 160,78 L 178,78 C 188,78 193,73 193,68 C 193,63 188,59 178,59 Z"/>
+            <path fill="#000000" d="M 235,12 C 235,4 246,0 278,0 C 310,0 322,4 322,18 L 290,20 C 290,17 286,15 278,15 C 270,15 266,17 266,21 C 266,27 274,29 294,33 C 316,37 325,46 325,62 C 325,88 305,100 278,100 C 250,100 232,88 232,65 L 263,63 C 263,78 269,82 278,82 C 287,82 293,78 293,71 C 293,64 285,62 265,58 C 243,54 235,43 235,26 Z"/>
+            <path fill="#000000" d="M 335,0 L 368,0 L 388,68 L 408,0 L 432,0 L 452,68 L 472,0 L 505,0 L 472,100 L 440,100 L 420,35 L 400,100 L 368,100 Z"/>
+        </svg>
         <div class="subtitle">3D SIMP Topology Engine — Client-Side WASM</div>
     </div>
 
