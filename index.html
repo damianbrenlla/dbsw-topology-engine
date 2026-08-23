@@ -167,10 +167,12 @@
         .checkbox-group { display: flex; gap: 12px; align-items: center; font-size: 0.78rem; }
         .checkbox-group label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
         input[type="checkbox"] { accent-color: #000000; }
+        
+        /* Data Tables for Supports/Loads */
         .data-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; margin-top: 4px; }
         .data-table th { text-align: left; background: #f5f5f5; padding: 4px 6px; border: 1px solid #e5e5e5; font-weight: 600; }
         .data-table td { padding: 2px; border: 1px solid #e5e5e5; }
-        .data-table input { width: 100%; border: none; padding: 4px; font-size: 0.72rem; }
+        .data-table input { width: 100%; border: none; padding: 4px; font-size: 0.72rem; font-family: monospace; min-width: 0; }
         .btn-del { background: #ffffff; color: #cc0000; border: none; font-weight: bold; cursor: pointer; padding: 2px 6px; }
 
         #legend {
@@ -315,18 +317,18 @@
     <div class="control-group">
         <label>Domain Geometry Lx, Ly, Lz (mm)</label>
         <div style="display: flex; gap: 6px;">
-            <input type="number" id="Lx" value="6000" style="width: 33%;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
-            <input type="number" id="Ly" value="300" style="width: 33%;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
-            <input type="number" id="Lz" value="600" style="width: 33%;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
+            <input type="number" id="Lx" value="6000" style="width: 33%; font-family: monospace;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
+            <input type="number" id="Ly" value="300" style="width: 33%; font-family: monospace;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
+            <input type="number" id="Lz" value="600" style="width: 33%; font-family: monospace;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
         </div>
     </div>
 
     <div class="control-group">
         <label>FE Mesh Divisions nx, ny, nz</label>
         <div style="display: flex; gap: 6px;">
-            <input type="number" id="nx" value="36" style="width: 33%;">
-            <input type="number" id="ny" value="9" style="width: 33%;">
-            <input type="number" id="nz" value="12" style="width: 33%;">
+            <input type="number" id="nx" value="36" style="width: 33%; font-family: monospace;">
+            <input type="number" id="ny" value="9" style="width: 33%; font-family: monospace;">
+            <input type="number" id="nz" value="12" style="width: 33%; font-family: monospace;">
         </div>
     </div>
 
@@ -355,22 +357,22 @@
         <div class="control-group">
             <label>Support Box X Bounds [Min, Max] (mm)</label>
             <div style="display: flex; gap: 6px;">
-                <input type="number" id="sup_x_min" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
-                <input type="number" id="sup_x_max" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
+                <input type="number" id="sup_x_min" value="0" style="width: 50%; font-family: monospace;" oninput="updateDomainVisuals()">
+                <input type="number" id="sup_x_max" value="0" style="width: 50%; font-family: monospace;" oninput="updateDomainVisuals()">
             </div>
         </div>
         <div class="control-group">
             <label>Support Box Y Bounds [Min, Max] (mm)</label>
             <div style="display: flex; gap: 6px;">
-                <input type="number" id="sup_y_min" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
-                <input type="number" id="sup_y_max" value="300" style="width: 50%;" oninput="updateDomainVisuals()">
+                <input type="number" id="sup_y_min" value="0" style="width: 50%; font-family: monospace;" oninput="updateDomainVisuals()">
+                <input type="number" id="sup_y_max" value="300" style="width: 50%; font-family: monospace;" oninput="updateDomainVisuals()">
             </div>
         </div>
         <div class="control-group">
             <label>Support Box Z Bounds [Min, Max] (mm)</label>
             <div style="display: flex; gap: 6px;">
-                <input type="number" id="sup_z_min" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
-                <input type="number" id="sup_z_max" value="600" style="width: 50%;" oninput="updateDomainVisuals()">
+                <input type="number" id="sup_z_min" value="0" style="width: 50%; font-family: monospace;" oninput="updateDomainVisuals()">
+                <input type="number" id="sup_z_max" value="600" style="width: 50%; font-family: monospace;" oninput="updateDomainVisuals()">
             </div>
         </div>
         <div class="checkbox-group">
@@ -441,23 +443,15 @@
             <label style="margin: 0;">Keep-Out / Forced-Solid Boxes (mm)</label>
             <div class="btn-group">
                 <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addVoidRegionRow()">+ Add Region</button>
-                <button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllVoidRegions()">Clear All Regions</button>
+                <button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllVoidRegions()">Clear All</button>
             </div>
         </div>
-        <table class="data-table">
-            <thead><tr><th>X Min</th><th>X Max</th><th>Y Min</th><th>Y Max</th><th>Z Min</th><th>Z Max</th><th>Type</th><th></th></tr></thead>
-            <tbody id="void_region_table_body"></tbody>
-        </table>
-        <p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 4px 0 0 0;">
-            "Void" forces every element inside the box to stay empty
-            regardless of what the optimiser would otherwise choose — useful
-            for service penetrations, ducts, or a doorway the topology has to
-            route around. "Forced Solid" pins material in place instead —
-            useful for a bearing pad or a fixing zone that must never be
-            hollowed out. Overlapping a region with a load or support point
-            can produce a physically meaningless model (e.g. a load applied
-            into thin air), so keep regions clear of your load/support
-            coordinates.
+        
+        <!-- Redesigned Compact Grid Card Container -->
+        <div id="void_region_list" style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;"></div>
+
+        <p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 6px 0 0 0;">
+            "Void" forces elements inside the box to stay empty regardless of what the optimiser would otherwise choose — useful for service penetrations, ducts, or doorways. "Forced Solid" pins material in place instead — useful for bearing pads or fixing zones. Overlapping a region with a load/support point produces an invalid model, so keep regions clear of load/support coordinates.
         </p>
     </div>
 
@@ -465,8 +459,8 @@
     <div class="control-group">
         <label>Volume Fraction & Max Iterations</label>
         <div style="display: flex; gap: 6px;">
-            <input type="number" step="0.05" id="volfrac" value="0.90" min="0.05" max="1.00" style="width: 50%;">
-            <input type="number" id="iterations" value="20" style="width: 50%;">
+            <input type="number" step="0.05" id="volfrac" value="0.90" min="0.05" max="1.00" style="width: 50%; font-family: monospace;">
+            <input type="number" id="iterations" value="20" style="width: 50%; font-family: monospace;">
         </div>
         <p style="font-size: 0.70rem; color: #888888; line-height: 1.45; margin: 4px 0 0 0;">
             Volume fraction sets the target proportion of the domain kept as solid
@@ -846,54 +840,82 @@
         updateDomainVisuals();
     }
 
+    /* Redesigned Card-Based Void Region Management Functions */
     function addVoidRegionRow(xMin, xMax, yMin, yMax, zMin, zMax, regionType) {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
         var Lz = parseFloat(document.getElementById('Lz').value) || 600;
-        xMin = (xMin === undefined) ? Lx * 0.4 : xMin;
-        xMax = (xMax === undefined) ? Lx * 0.6 : xMax;
+
+        xMin = (xMin === undefined) ? Math.round(Lx * 0.4) : xMin;
+        xMax = (xMax === undefined) ? Math.round(Lx * 0.6) : xMax;
         yMin = (yMin === undefined) ? 0 : yMin;
         yMax = (yMax === undefined) ? Ly : yMax;
         zMin = (zMin === undefined) ? 0 : zMin;
-        zMax = (zMax === undefined) ? Lz * 0.3 : zMax;
+        zMax = (zMax === undefined) ? Math.round(Lz * 0.3) : zMax;
         regionType = (regionType === undefined) ? 'void' : regionType;
 
-        var tbody = document.getElementById('void_region_table_body');
-        var tr = document.createElement('tr');
-        tr.innerHTML =
-            '<td><input type="number" class="vr-xmin" value="' + xMin + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="vr-xmax" value="' + xMax + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="vr-ymin" value="' + yMin + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="vr-ymax" value="' + yMax + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="vr-zmin" value="' + zMin + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="vr-zmax" value="' + zMax + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><select class="vr-type" onchange="updateDomainVisuals()">' +
-                '<option value="void"' + (regionType === 'void' ? ' selected' : '') + '>Void</option>' +
-                '<option value="solid"' + (regionType === 'solid' ? ' selected' : '') + '>Forced Solid</option>' +
-            '</select></td>' +
-            '<td><button class="btn-del" onclick="deleteRow(this)">×</button></td>';
-        tbody.appendChild(tr);
+        var container = document.getElementById('void_region_list');
+        var card = document.createElement('div');
+        card.className = 'void-region-card';
+        card.style.cssText = 'background: #f9f9f9; border: 1px solid #e5e5e5; padding: 8px; display: flex; flex-direction: column; gap: 6px; position: relative;';
+
+        card.innerHTML = 
+            '<div style="display: flex; justify-content: space-between; align-items: center;">' +
+                '<select class="vr-type" onchange="updateDomainVisuals()" style="font-size: 0.72rem; font-weight: bold; padding: 2px 4px; width: 130px;">' +
+                    '<option value="void"' + (regionType === 'void' ? ' selected' : '') + '>Void (Keep-Out)</option>' +
+                    '<option value="solid"' + (regionType === 'solid' ? ' selected' : '') + '>Forced Solid</option>' +
+                '</select>' +
+                '<button class="btn-del" onclick="deleteVoidCard(this)" style="font-size: 0.85rem; padding: 0 4px;">×</button>' +
+            '</div>' +
+            '<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;">' +
+                '<div><label style="font-size: 0.62rem; color: #666; display:block;">X [Min, Max]</label>' +
+                    '<div style="display: flex; gap: 2px;">' +
+                        '<input type="number" class="vr-xmin" value="' + xMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-family: monospace; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+                        '<input type="number" class="vr-xmax" value="' + xMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-family: monospace; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+                    '</div>' +
+                '</div>' +
+                '<div><label style="font-size: 0.62rem; color: #666; display:block;">Y [Min, Max]</label>' +
+                    '<div style="display: flex; gap: 2px;">' +
+                        '<input type="number" class="vr-ymin" value="' + yMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-family: monospace; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+                        '<input type="number" class="vr-ymax" value="' + yMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-family: monospace; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+                    '</div>' +
+                '</div>' +
+                '<div><label style="font-size: 0.62rem; color: #666; display:block;">Z [Min, Max]</label>' +
+                    '<div style="display: flex; gap: 2px;">' +
+                        '<input type="number" class="vr-zmin" value="' + zMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-family: monospace; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+                        '<input type="number" class="vr-zmax" value="' + zMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-family: monospace; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+
+        container.appendChild(card);
+        updateDomainVisuals();
+    }
+
+    function deleteVoidCard(btn) {
+        var card = btn.closest('.void-region-card');
+        if (card) card.parentNode.removeChild(card);
         updateDomainVisuals();
     }
 
     function clearAllVoidRegions() {
-        var tbody = document.getElementById('void_region_table_body');
-        tbody.innerHTML = '';
+        var container = document.getElementById('void_region_list');
+        container.innerHTML = '';
         updateDomainVisuals();
     }
 
     function getVoidRegionArrayData() {
-        var rows = document.querySelectorAll('#void_region_table_body tr');
+        var cards = document.querySelectorAll('#void_region_list .void-region-card');
         var regions = [];
-        rows.forEach(function(r) {
+        cards.forEach(function(c) {
             regions.push({
-                x_min: parseFloat(r.querySelector('.vr-xmin').value) || 0,
-                x_max: parseFloat(r.querySelector('.vr-xmax').value) || 0,
-                y_min: parseFloat(r.querySelector('.vr-ymin').value) || 0,
-                y_max: parseFloat(r.querySelector('.vr-ymax').value) || 0,
-                z_min: parseFloat(r.querySelector('.vr-zmin').value) || 0,
-                z_max: parseFloat(r.querySelector('.vr-zmax').value) || 0,
-                region_type: r.querySelector('.vr-type').value || 'void'
+                x_min: parseFloat(c.querySelector('.vr-xmin').value) || 0,
+                x_max: parseFloat(c.querySelector('.vr-xmax').value) || 0,
+                y_min: parseFloat(c.querySelector('.vr-ymin').value) || 0,
+                y_max: parseFloat(c.querySelector('.vr-ymax').value) || 0,
+                z_min: parseFloat(c.querySelector('.vr-zmin').value) || 0,
+                z_max: parseFloat(c.querySelector('.vr-zmax').value) || 0,
+                region_type: c.querySelector('.vr-type').value || 'void'
             });
         });
         return regions;
