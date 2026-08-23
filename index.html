@@ -449,11 +449,26 @@
     <hr>
     <div class="section-header">Visualization Render Mode</div>
     <div class="control-group">
-        <select id="render_mode" onchange="reRenderMesh()">
+        <select id="render_mode" onchange="toggleRenderModeUI(); reRenderMesh();">
             <option value="ec3_stress">Stress Map (+Tension / -Compression)</option>
             <option value="grey">Monochrome Studio Grey (50%)</option>
             <option value="deflection">Displacement Map (Deflection mm)</option>
         </select>
+    </div>
+
+    <!-- Interactive Stress Map Threshold Controls (Visible in ec3_stress mode) -->
+    <div id="stress_thresholds_div" class="control-group" style="margin-top: 4px;">
+        <label>Active Stress Color Limits (MPa) — Values outside render in Studio Grey</label>
+        <div style="display: flex; gap: 6px;">
+            <div style="width: 50%;">
+                <label style="font-size: 0.68rem; color: #666;">Max Comp (-MPa)</label>
+                <input type="number" id="stress_min_cutoff" step="0.5" style="width: 100%; font-family: monospace;" oninput="reRenderMesh()">
+            </div>
+            <div style="width: 50%;">
+                <label style="font-size: 0.68rem; color: #666;">Max Tens (+MPa)</label>
+                <input type="number" id="stress_max_tens_cutoff" step="0.5" style="width: 100%; font-family: monospace;" oninput="reRenderMesh()">
+            </div>
+        </div>
     </div>
 
     <hr>
@@ -537,7 +552,6 @@
         "Sandstone (50 MPa)": { fb: 50.0, E: 20000.0 }, "Marble (120 MPa)": { fb: 120.0, E: 45000.0 }
     };
 
-    // Fine-Grained Gizmo Visibility Controls
     function setVoidGizmosVisible(visible) {
         voidRegionGizmos.forEach(function(g) { g.visible = visible; });
     }
@@ -545,6 +559,12 @@
     function setBoundaryGizmosVisible(visible) {
         supportGizmos.forEach(function(g) { g.visible = visible; });
         forceArrows.forEach(function(a) { a.visible = visible; });
+    }
+
+    function toggleRenderModeUI() {
+        var mode = document.getElementById('render_mode').value;
+        var thresholdDiv = document.getElementById('stress_thresholds_div');
+        thresholdDiv.style.display = (mode === 'ec3_stress') ? 'flex' : 'none';
     }
 
     function updateMaterialUI() {
@@ -815,7 +835,6 @@
         updateDomainVisuals();
     }
 
-    /* Redesigned Card-Based Void Region Management Functions */
     function addVoidRegionRow(xMin, xMax, yMin, yMax, zMin, zMax, regionType) {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -969,7 +988,6 @@
         supportGizmos.forEach(function(g) { scene.remove(g); });
         supportGizmos = [];
 
-        // Fixed-scale gizmo size tied to FE element height (clamped between 80mm and 180mm)
         var dz = Lz / nz;
         var size = Math.min(180.0, Math.max(80.0, dz * 1.5));
         
@@ -1103,7 +1121,6 @@
             voidRegionGizmos.push(regWire);
         });
 
-        // Ensure all gizmos are visible during problem definition
         setVoidGizmosVisible(true);
         setBoundaryGizmosVisible(true);
     }
@@ -1158,10 +1175,15 @@
             currentUMax = data.data.u_max;
             currentFk = data.data.f_k || 30.0;
 
+            // Populate stress cutoff inputs with full solved stress range
+            document.getElementById('stress_min_cutoff').value = Math.abs(currentSigmaMaxComp).toFixed(1);
+            document.getElementById('stress_max_tens_cutoff').value = currentSigmaMaxTens.toFixed(1);
+
             status.style.color = "#000000";
             status.style.borderLeftColor = "#000000";
             status.innerText = "Optimisation complete in " + (data.data.solve_time_s || "?") + "s [" +
                 (data.data.material_name || "") + "]. Rendering...";
+            toggleRenderModeUI();
             reRenderMesh();
 
         } else if (data.status === 'error') {
@@ -1287,12 +1309,15 @@
             document.getElementById('lbl-025').innerText = formatMM(currentUMax * 0.25);
             document.getElementById('lbl-000').innerText = "0.00 mm";
         } else {
+            var activeMaxComp = -Math.abs(parseFloat(document.getElementById('stress_min_cutoff').value) || Math.abs(currentSigmaMaxComp));
+            var activeMaxTens = parseFloat(document.getElementById('stress_max_tens_cutoff').value) || currentSigmaMaxTens;
+
             legendTitle.innerText = "Stress Map (MPa)";
-            document.getElementById('lbl-100').innerText = "+" + formatMPa(currentSigmaMaxTens) + " (Max Tens)";
-            document.getElementById('lbl-075').innerText = "+" + formatMPa(currentSigmaMaxTens * 0.50);
+            document.getElementById('lbl-100').innerText = "+" + formatMPa(activeMaxTens) + " (Limit)";
+            document.getElementById('lbl-075').innerText = "+" + formatMPa(activeMaxTens * 0.50);
             document.getElementById('lbl-050').innerText = "0.0 MPa";
-            document.getElementById('lbl-025').innerText = formatMPa(currentSigmaMaxComp * 0.50);
-            document.getElementById('lbl-000').innerText = formatMPa(currentSigmaMaxComp) + " (Max Comp)";
+            document.getElementById('lbl-025').innerText = formatMPa(activeMaxComp * 0.50);
+            document.getElementById('lbl-000').innerText = formatMPa(activeMaxComp) + " (Limit)";
         }
     }
 
@@ -1301,10 +1326,8 @@
         var mode = document.getElementById('render_mode').value;
         var isDeflectionMode = (mode === 'deflection');
 
-        // Guard check: only proceed if solved topology geometry exists
         if (!currentVertices.length || !currentFaces.length) return;
 
-        // Hide ONLY translucent void boxes; keep physical supports/loads visible
         setVoidGizmosVisible(false);
         setBoundaryGizmosVisible(true);
 
@@ -1321,7 +1344,14 @@
         var positions = [];
         var colors = [];
 
+        var activeMaxComp = -Math.abs(parseFloat(document.getElementById('stress_min_cutoff').value) || Math.abs(currentSigmaMaxComp));
+        var activeMaxTens = parseFloat(document.getElementById('stress_max_tens_cutoff').value) || currentSigmaMaxTens;
+
+        // Interactive threshold colormap: outside user bounds renders Studio Grey (#808080)
         var colorScaleSignedAsymmetric = function(val, maxTens, minComp) {
+            if (val > maxTens || val < minComp) {
+                return new THREE.Color(0x808080);
+            }
             var h;
             if (val >= 0) {
                 var normTens = (maxTens > 1e-6) ? Math.min(val / maxTens, 1.0) : 0.0;
@@ -1361,9 +1391,9 @@
                     c2 = colorScaleUnsigned(s2, currentUMax);
                     c3 = colorScaleUnsigned(s3, currentUMax);
                 } else {
-                    c1 = colorScaleSignedAsymmetric(s1, currentSigmaMaxTens, currentSigmaMaxComp);
-                    c2 = colorScaleSignedAsymmetric(s2, currentSigmaMaxTens, currentSigmaMaxComp);
-                    c3 = colorScaleSignedAsymmetric(s3, currentSigmaMaxTens, currentSigmaMaxComp);
+                    c1 = colorScaleSignedAsymmetric(s1, activeMaxTens, activeMaxComp);
+                    c2 = colorScaleSignedAsymmetric(s2, activeMaxTens, activeMaxComp);
+                    c3 = colorScaleSignedAsymmetric(s3, activeMaxTens, activeMaxComp);
                 }
                 
                 colors.push(c1.r, c1.g, c1.b); 
