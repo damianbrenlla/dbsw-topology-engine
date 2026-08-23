@@ -718,7 +718,6 @@
         window.addEventListener('resize', onWindowResize);
         updateMaterialUI();
 
-
         applyLoadPreset();
         setupCutPlaneSliders();
         animate();
@@ -958,6 +957,7 @@
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
         var Lz = parseFloat(document.getElementById('Lz').value) || 600;
+        var nz = parseInt(document.getElementById('nz').value) || 12;
 
         if (domainBox) scene.remove(domainBox);
         var boxGeo = new THREE.BoxGeometry(Lx, Lz, Ly);
@@ -969,9 +969,11 @@
         supportGizmos.forEach(function(g) { scene.remove(g); });
         supportGizmos = [];
 
-        var size = Math.max(120, Lz * 0.22);
+        // Fixed-scale gizmo size tied to FE element height (clamped between 80mm and 180mm)
+        var dz = Lz / nz;
+        var size = Math.min(180.0, Math.max(80.0, dz * 1.5));
+        
         var supMode = document.getElementById('support_mode').value;
-
         var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 });
         var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 });
 
@@ -986,35 +988,35 @@
                 supportGizmos.push(wallMesh);
 
             } else if (preset === 'four_corners') {
-                var cornerGeo = new THREE.ConeGeometry(size * 0.8, size, 4);
+                var cornerGeo = new THREE.ConeGeometry(size * 0.5, size, 4);
                 var corners = [[0, 0], [Lx, 0], [0, Ly], [Lx, Ly]];
                 corners.forEach(function(pt) {
                     var cMesh = new THREE.Mesh(cornerGeo, pinMat);
-                    cMesh.position.set(pt[0], -size * 0.4, pt[1]);
+                    cMesh.position.set(pt[0], -size * 0.5, pt[1]);
                     scene.add(cMesh);
                     supportGizmos.push(cMesh);
                 });
 
             } else if (preset === 'all_edges') {
-                var edgeT = Math.max(size * 0.28, Math.min(Lx, Ly) * 0.02);
-                var edgeH = size * 0.35;
+                var edgeT = Math.max(size * 0.2, Math.min(Lx, Ly) * 0.02);
+                var edgeH = size * 0.3;
                 var edgeGeoX = new THREE.BoxGeometry(Lx, edgeH, edgeT);
                 var edgeGeoY = new THREE.BoxGeometry(edgeT, edgeH, Ly);
 
                 var edgeFront = new THREE.Mesh(edgeGeoX, pinMat);
-                edgeFront.position.set(Lx / 2.0, -edgeH * 0.4, edgeT / 2.0);
+                edgeFront.position.set(Lx / 2.0, -edgeH * 0.5, edgeT / 2.0);
                 scene.add(edgeFront); supportGizmos.push(edgeFront);
 
                 var edgeBack = new THREE.Mesh(edgeGeoX, pinMat);
-                edgeBack.position.set(Lx / 2.0, -edgeH * 0.4, Ly - edgeT / 2.0);
+                edgeBack.position.set(Lx / 2.0, -edgeH * 0.5, Ly - edgeT / 2.0);
                 scene.add(edgeBack); supportGizmos.push(edgeBack);
 
                 var edgeLeft = new THREE.Mesh(edgeGeoY, pinMat);
-                edgeLeft.position.set(edgeT / 2.0, -edgeH * 0.4, Ly / 2.0);
+                edgeLeft.position.set(edgeT / 2.0, -edgeH * 0.5, Ly / 2.0);
                 scene.add(edgeLeft); supportGizmos.push(edgeLeft);
 
                 var edgeRight = new THREE.Mesh(edgeGeoY, pinMat);
-                edgeRight.position.set(Lx - edgeT / 2.0, -edgeH * 0.4, Ly / 2.0);
+                edgeRight.position.set(Lx - edgeT / 2.0, -edgeH * 0.5, Ly / 2.0);
                 scene.add(edgeRight); supportGizmos.push(edgeRight);
             }
         }
@@ -1028,17 +1030,17 @@
             var zMin = parseFloat(document.getElementById('sup_z_min').value) || 0;
             var zMax = parseFloat(document.getElementById('sup_z_max').value) || 0;
             
-            var dx = Math.max(xMax - xMin, size * 0.5), dy = Math.max(yMax - yMin, size * 0.5), dz = Math.max(zMax - zMin, size * 0.5);
-            var supGeo = new THREE.BoxGeometry(dx, dz, dy);
+            var dx = Math.max(xMax - xMin, size * 0.5), dy = Math.max(yMax - yMin, size * 0.5), dz_box = Math.max(zMax - zMin, size * 0.5);
+            var supGeo = new THREE.BoxGeometry(dx, dz_box, dy);
             var supMesh = new THREE.Mesh(supGeo, pinMat);
-            supMesh.position.set(xMin + dx / 2.0, zMin + dz / 2.0, yMin + dy / 2.0);
+            supMesh.position.set(xMin + dx / 2.0, zMin + dz_box / 2.0, yMin + dy / 2.0);
             scene.add(supMesh);
             supportGizmos.push(supMesh);
         }
 
         var pointSups = getPointSupportArrayData();
-        var ptPinGeo = new THREE.ConeGeometry(size * 0.6, size * 0.8, 4);
-        var ptRollerGeo = new THREE.CylinderGeometry(size * 0.25, size * 0.25, size * 0.8, 16);
+        var ptPinGeo = new THREE.ConeGeometry(size * 0.4, size * 0.7, 4);
+        var ptRollerGeo = new THREE.CylinderGeometry(size * 0.2, size * 0.2, size * 0.7, 16);
 
         pointSups.forEach(function(ps) {
             var isPin = ps.dofs.includes('x') && ps.dofs.includes('y') && ps.dofs.includes('z');
@@ -1046,11 +1048,11 @@
 
             if (isPin) {
                 ptMesh = new THREE.Mesh(ptPinGeo, pinMat);
-                ptMesh.position.set(ps.x, ps.z - size * 0.4, ps.y);
+                ptMesh.position.set(ps.x, ps.z - size * 0.35, ps.y);
             } else {
                 ptMesh = new THREE.Mesh(ptRollerGeo, rollerMat);
                 ptMesh.rotation.x = Math.PI / 2;
-                ptMesh.position.set(ps.x, ps.z - size * 0.25, ps.y);
+                ptMesh.position.set(ps.x, ps.z - size * 0.2, ps.y);
             }
 
             scene.add(ptMesh);
@@ -1065,8 +1067,8 @@
             if (forceMag > 1e-3) {
                 dirVector.normalize();
                 var origin = new THREE.Vector3(ld.x, ld.z, ld.y);
-                var arrowLength = Math.min(Math.max(forceMag * 1.5, 120), 350);
-                var arrow = new THREE.ArrowHelper(dirVector, origin, arrowLength, 0xcc0000, arrowLength * 0.2, arrowLength * 0.1);
+                var arrowLength = Math.min(Math.max(forceMag * 1.2, size), size * 2.5);
+                var arrow = new THREE.ArrowHelper(dirVector, origin, arrowLength, 0xcc0000, arrowLength * 0.25, arrowLength * 0.12);
                 scene.add(arrow);
                 forceArrows.push(arrow);
             }
@@ -1085,11 +1087,11 @@
         getVoidRegionArrayData().forEach(function(vr) {
             var dx = Math.max(vr.x_max - vr.x_min, 1.0);
             var dy = Math.max(vr.y_max - vr.y_min, 1.0);
-            var dz = Math.max(vr.z_max - vr.z_min, 1.0);
-            var regGeo = new THREE.BoxGeometry(dx, dz, dy);
+            var dz_box = Math.max(vr.z_max - vr.z_min, 1.0);
+            var regGeo = new THREE.BoxGeometry(dx, dz_box, dy);
             var fillMat = (vr.region_type === 'solid') ? solidFillMat : voidFillMat;
             var regMesh = new THREE.Mesh(regGeo, fillMat);
-            regMesh.position.set(vr.x_min + dx / 2.0, vr.z_min + dz / 2.0, vr.y_min + dy / 2.0);
+            regMesh.position.set(vr.x_min + dx / 2.0, vr.z_min + dz_box / 2.0, vr.y_min + dy / 2.0);
             scene.add(regMesh);
             voidRegionGizmos.push(regMesh);
 
