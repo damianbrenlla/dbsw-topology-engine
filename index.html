@@ -456,17 +456,28 @@
         </select>
     </div>
 
-    <!-- Interactive Stress Map Threshold Controls (Visible in ec3_stress mode) -->
-    <div id="stress_thresholds_div" class="control-group" style="margin-top: 4px;">
-        <label>Active Stress Color Limits (MPa) — Values outside render in Studio Grey</label>
-        <div style="display: flex; gap: 6px;">
-            <div style="width: 50%;">
-                <label style="font-size: 0.68rem; color: #666;">Max Comp (-MPa)</label>
-                <input type="number" id="stress_min_cutoff" step="0.5" style="width: 100%; font-family: monospace;" oninput="reRenderMesh()">
+    <!-- Analog Stress Limit Faders (Visible in ec3_stress mode) -->
+    <div id="stress_thresholds_div" class="control-group" style="margin-top: 4px; display: none;">
+        <label style="font-weight: 700; text-transform: uppercase; font-size: 0.70rem; letter-spacing: 0.5px;">
+            Interactive Stress Palette Faders
+        </label>
+        <p style="font-size: 0.68rem; color: #888888; margin: 0 0 4px 0; line-height: 1.3;">
+            Adjust limits between zero and calculated peaks. Elements outside the range render in Studio Grey.
+        </p>
+        <div style="display: flex; flex-direction: column; gap: 8px; background: #f9f9f9; padding: 8px; border: 1px solid #e5e5e5;">
+            <div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.70rem; margin-bottom: 2px;">
+                    <span style="color: #0055cc; font-weight: 600;">Compression Limit (-MPa)</span>
+                    <span id="lbl_comp_val" style="font-family: monospace; font-weight: bold;">0.0 MPa</span>
+                </div>
+                <input type="range" id="stress_comp_slider" min="0" max="1" step="0.01" value="1" oninput="onStressSliderChange()">
             </div>
-            <div style="width: 50%;">
-                <label style="font-size: 0.68rem; color: #666;">Max Tens (+MPa)</label>
-                <input type="number" id="stress_max_tens_cutoff" step="0.5" style="width: 100%; font-family: monospace;" oninput="reRenderMesh()">
+            <div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.70rem; margin-bottom: 2px;">
+                    <span style="color: #cc0000; font-weight: 600;">Tension Limit (+MPa)</span>
+                    <span id="lbl_tens_val" style="font-family: monospace; font-weight: bold;">0.0 MPa</span>
+                </div>
+                <input type="range" id="stress_tens_slider" min="0" max="1" step="0.01" value="1" oninput="onStressSliderChange()">
             </div>
         </div>
     </div>
@@ -523,8 +534,8 @@
     var currentVertices = [], currentFaces = [], currentStressesMPa = [], currentDeflectionsMM = [];
     
     // Explicit Asymmetric Stress Bounds Tracking
-    var currentSigmaMaxTens = 1.0;  // Maximum Tensile Stress (+MPa)
-    var currentSigmaMaxComp = -1.0; // Maximum Compressive Stress (-MPa, negative)
+    var currentSigmaMaxTens = 1.0;  // Peak Tensile Stress (+MPa)
+    var currentSigmaMaxComp = -1.0; // Peak Compressive Stress (-MPa, negative)
     var currentUMax = 1.0, currentFk = 30.0;
     var worker = null;
     var engineReady = false;
@@ -564,7 +575,15 @@
     function toggleRenderModeUI() {
         var mode = document.getElementById('render_mode').value;
         var thresholdDiv = document.getElementById('stress_thresholds_div');
-        thresholdDiv.style.display = (mode === 'ec3_stress') ? 'flex' : 'none';
+        thresholdDiv.style.display = (mode === 'ec3_stress' && currentVertices.length > 0) ? 'flex' : 'none';
+    }
+
+    function onStressSliderChange() {
+        var compVal = parseFloat(document.getElementById('stress_comp_slider').value) || 0;
+        var tensVal = parseFloat(document.getElementById('stress_tens_slider').value) || 0;
+        document.getElementById('lbl_comp_val').innerText = "-" + compVal.toFixed(2) + " MPa";
+        document.getElementById('lbl_tens_val').innerText = "+" + tensVal.toFixed(2) + " MPa";
+        reRenderMesh();
     }
 
     function updateMaterialUI() {
@@ -835,6 +854,7 @@
         updateDomainVisuals();
     }
 
+    /* Redesigned Card-Based Void Region Management Functions */
     function addVoidRegionRow(xMin, xMax, yMin, yMax, zMin, zMax, regionType) {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -1175,9 +1195,18 @@
             currentUMax = data.data.u_max;
             currentFk = data.data.f_k || 30.0;
 
-            // Populate stress cutoff inputs with full solved stress range
-            document.getElementById('stress_min_cutoff').value = Math.abs(currentSigmaMaxComp).toFixed(1);
-            document.getElementById('stress_max_tens_cutoff').value = currentSigmaMaxTens.toFixed(1);
+            // Configure slider bounds based on exact calculated limits
+            var compSlider = document.getElementById('stress_comp_slider');
+            var tensSlider = document.getElementById('stress_tens_slider');
+
+            var maxCompAbs = Math.abs(currentSigmaMaxComp);
+            compSlider.max = maxCompAbs > 1e-3 ? maxCompAbs : 1.0;
+            compSlider.value = compSlider.max;
+
+            tensSlider.max = currentSigmaMaxTens > 1e-3 ? currentSigmaMaxTens : 1.0;
+            tensSlider.value = tensSlider.max;
+
+            onStressSliderChange();
 
             status.style.color = "#000000";
             status.style.borderLeftColor = "#000000";
@@ -1278,6 +1307,7 @@
 
         document.getElementById('legend').style.display = 'none';
         document.getElementById('results-actions-group').style.display = 'none';
+        document.getElementById('stress_thresholds_div').style.display = 'none';
 
         var status = document.getElementById('status');
         status.style.color = "#000000";
@@ -1309,8 +1339,8 @@
             document.getElementById('lbl-025').innerText = formatMM(currentUMax * 0.25);
             document.getElementById('lbl-000').innerText = "0.00 mm";
         } else {
-            var activeMaxComp = -Math.abs(parseFloat(document.getElementById('stress_min_cutoff').value) || Math.abs(currentSigmaMaxComp));
-            var activeMaxTens = parseFloat(document.getElementById('stress_max_tens_cutoff').value) || currentSigmaMaxTens;
+            var activeMaxComp = -Math.abs(parseFloat(document.getElementById('stress_comp_slider').value) || Math.abs(currentSigmaMaxComp));
+            var activeMaxTens = parseFloat(document.getElementById('stress_tens_slider').value) || currentSigmaMaxTens;
 
             legendTitle.innerText = "Stress Map (MPa)";
             document.getElementById('lbl-100').innerText = "+" + formatMPa(activeMaxTens) + " (Limit)";
@@ -1344,8 +1374,8 @@
         var positions = [];
         var colors = [];
 
-        var activeMaxComp = -Math.abs(parseFloat(document.getElementById('stress_min_cutoff').value) || Math.abs(currentSigmaMaxComp));
-        var activeMaxTens = parseFloat(document.getElementById('stress_max_tens_cutoff').value) || currentSigmaMaxTens;
+        var activeMaxComp = -Math.abs(parseFloat(document.getElementById('stress_comp_slider').value) || Math.abs(currentSigmaMaxComp));
+        var activeMaxTens = parseFloat(document.getElementById('stress_tens_slider').value) || currentSigmaMaxTens;
 
         // Interactive threshold colormap: outside user bounds renders Studio Grey (#808080)
         var colorScaleSignedAsymmetric = function(val, maxTens, minComp) {
