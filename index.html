@@ -462,22 +462,22 @@
             Interactive Stress Palette Faders
         </label>
         <p style="font-size: 0.68rem; color: #888888; margin: 0 0 4px 0; line-height: 1.3;">
-            Adjust limits between zero and calculated peaks. Elements outside the range render in Studio Grey.
+            Adjust limits between 0.01 MPa and calculated peaks. Elements outside range render in Studio Grey.
         </p>
         <div style="display: flex; flex-direction: column; gap: 8px; background: #f9f9f9; padding: 8px; border: 1px solid #e5e5e5;">
             <div>
                 <div style="display: flex; justify-content: space-between; font-size: 0.70rem; margin-bottom: 2px;">
                     <span style="color: #0055cc; font-weight: 600;">Compression Limit (-MPa)</span>
-                    <span id="lbl_comp_val" style="font-family: monospace; font-weight: bold;">0.0 MPa</span>
+                    <span id="lbl_comp_val" style="font-family: monospace; font-weight: bold;">0.01 MPa</span>
                 </div>
-                <input type="range" id="stress_comp_slider" min="0" max="1" step="0.01" value="1" oninput="onStressSliderChange()">
+                <input type="range" id="stress_comp_slider" min="0.01" max="1" step="0.01" value="1" oninput="onStressSliderChange()">
             </div>
             <div>
                 <div style="display: flex; justify-content: space-between; font-size: 0.70rem; margin-bottom: 2px;">
                     <span style="color: #cc0000; font-weight: 600;">Tension Limit (+MPa)</span>
-                    <span id="lbl_tens_val" style="font-family: monospace; font-weight: bold;">0.0 MPa</span>
+                    <span id="lbl_tens_val" style="font-family: monospace; font-weight: bold;">0.01 MPa</span>
                 </div>
-                <input type="range" id="stress_tens_slider" min="0" max="1" step="0.01" value="1" oninput="onStressSliderChange()">
+                <input type="range" id="stress_tens_slider" min="0.01" max="1" step="0.01" value="1" oninput="onStressSliderChange()">
             </div>
         </div>
     </div>
@@ -579,8 +579,8 @@
     }
 
     function onStressSliderChange() {
-        var compVal = parseFloat(document.getElementById('stress_comp_slider').value) || 0;
-        var tensVal = parseFloat(document.getElementById('stress_tens_slider').value) || 0;
+        var compVal = parseFloat(document.getElementById('stress_comp_slider').value) || 0.01;
+        var tensVal = parseFloat(document.getElementById('stress_tens_slider').value) || 0.01;
         document.getElementById('lbl_comp_val').innerText = "-" + compVal.toFixed(2) + " MPa";
         document.getElementById('lbl_tens_val').innerText = "+" + tensVal.toFixed(2) + " MPa";
         reRenderMesh();
@@ -1195,15 +1195,15 @@
             currentUMax = data.data.u_max;
             currentFk = data.data.f_k || 30.0;
 
-            // Configure slider bounds based on exact calculated limits
+            // Configure slider bounds with 0.01 MPa minimum
             var compSlider = document.getElementById('stress_comp_slider');
             var tensSlider = document.getElementById('stress_tens_slider');
 
             var maxCompAbs = Math.abs(currentSigmaMaxComp);
-            compSlider.max = maxCompAbs > 1e-3 ? maxCompAbs : 1.0;
+            compSlider.max = maxCompAbs > 0.01 ? maxCompAbs : 0.01;
             compSlider.value = compSlider.max;
 
-            tensSlider.max = currentSigmaMaxTens > 1e-3 ? currentSigmaMaxTens : 1.0;
+            tensSlider.max = currentSigmaMaxTens > 0.01 ? currentSigmaMaxTens : 0.01;
             tensSlider.value = tensSlider.max;
 
             onStressSliderChange();
@@ -1343,11 +1343,11 @@
             var activeMaxTens = parseFloat(document.getElementById('stress_tens_slider').value) || currentSigmaMaxTens;
 
             legendTitle.innerText = "Stress Map (MPa)";
-            document.getElementById('lbl-100').innerText = "+" + formatMPa(activeMaxTens) + " (Limit)";
+            document.getElementById('lbl-100').innerText = "+" + formatMPa(activeMaxTens);
             document.getElementById('lbl-075').innerText = "+" + formatMPa(activeMaxTens * 0.50);
             document.getElementById('lbl-050').innerText = "0.0 MPa";
             document.getElementById('lbl-025').innerText = formatMPa(activeMaxComp * 0.50);
-            document.getElementById('lbl-000').innerText = formatMPa(activeMaxComp) + " (Limit)";
+            document.getElementById('lbl-000').innerText = formatMPa(activeMaxComp);
         }
     }
 
