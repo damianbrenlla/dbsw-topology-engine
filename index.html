@@ -45,7 +45,7 @@
         * { box-sizing: border-box; }
         body {
             margin: 0; padding: 0;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-family: "Helvetica Neue Paneuropean 83 Extended Heavy", "Helvetica Neue Extended", "Helvetica Neue Black Extended", "Helvetica Neue", Helvetica, Arial, sans-serif;
             background: #ffffff; color: #000000;
             display: flex; height: 100vh; overflow: hidden;
             -webkit-font-smoothing: antialiased;
@@ -77,16 +77,16 @@
             height: 18px;
             width: auto;
             display: block;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
         }
 
-        .subtitle { font-size: 0.72rem; color: #666666; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.8px; }
+        .subtitle { font-size: 0.72rem; color: #666666; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; }
         .control-group { display: flex; flex-direction: column; gap: 4px; }
-        label { font-size: 0.75rem; color: #444444; font-weight: 500; letter-spacing: 0.2px; }
+        label { font-size: 0.75rem; color: #444444; font-weight: 600; letter-spacing: 0.2px; }
         input, select {
             background: #ffffff; border: 1px solid #cccccc; color: #000000;
             padding: 6px 8px; border-radius: 0px;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-family: "Helvetica Neue Paneuropean 83 Extended Heavy", "Helvetica Neue Extended", "Helvetica Neue", Helvetica, Arial, sans-serif;
             font-size: 0.78rem; outline: none; transition: border-color 0.15s ease;
         }
         input:focus, select:focus { border-color: #000000; }
@@ -107,8 +107,8 @@
         .btn-primary {
             background: #000000; color: #ffffff; border: 1px solid #000000;
             padding: 12px; border-radius: 0px;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-            font-size: 0.82rem; font-weight: 600; letter-spacing: 0.5px;
+            font-family: "Helvetica Neue Paneuropean 83 Extended Heavy", "Helvetica Neue Extended", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 0.82rem; font-weight: 700; letter-spacing: 0.5px;
             text-transform: uppercase; cursor: pointer; transition: background 0.15s ease; margin-top: 4px;
         }
         .btn-primary:hover { background: #333333; }
@@ -116,7 +116,7 @@
         .btn-stop {
             background: #ffffff; color: #cc0000; border: 1px solid #cc0000;
             padding: 10px; border-radius: 0px;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-family: "Helvetica Neue Paneuropean 83 Extended Heavy", "Helvetica Neue Extended", "Helvetica Neue", Helvetica, Arial, sans-serif;
             font-size: 0.80rem; font-weight: 700; letter-spacing: 0.5px;
             text-transform: uppercase; cursor: pointer; transition: all 0.15s ease; display: none; margin-top: 4px;
         }
@@ -124,8 +124,8 @@
         .btn-secondary {
             background: #ffffff; color: #000000; border: 1px solid #000000;
             padding: 8px; border-radius: 0px;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-            font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px;
+            font-family: "Helvetica Neue Paneuropean 83 Extended Heavy", "Helvetica Neue Extended", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px;
             text-transform: uppercase; cursor: pointer; transition: background 0.15s ease;
         }
         .btn-secondary:hover { background: #f5f5f5; }
@@ -133,8 +133,8 @@
         .btn-secondary-danger {
             background: #ffffff; color: #cc0000; border: 1px solid #cc0000;
             padding: 8px; border-radius: 0px;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-            font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px;
+            font-family: "Helvetica Neue Paneuropean 83 Extended Heavy", "Helvetica Neue Extended", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px;
             text-transform: uppercase; cursor: pointer; transition: background 0.15s ease;
         }
         .btn-secondary-danger:hover { background: #cc0000; color: #ffffff; }
@@ -197,8 +197,8 @@
 
 <div id="intro-overlay">
     <div id="intro-modal">
-        <!-- DBSW Vector Wordmark SVG -->
-        <svg class="brand-logo-svg" viewBox="0 0 505 100" xmlns="http://www.w3.org/2000/svg" style="height: 32px;">
+        <!-- DBSW Vector Wordmark SVG (Height 18px, Padded ViewBox) -->
+        <svg class="brand-logo-svg" viewBox="-10 -5 540 110" xmlns="http://www.w3.org/2000/svg" style="height: 18px;">
             <path fill="#000000" d="M 0,0 L 52,0 C 95,0 115,16 115,50 C 115,84 95,100 52,100 L 0,100 Z M 36,25 L 36,75 L 50,75 C 72,75 78,68 78,50 C 78,32 72,25 50,25 Z"/>
             <path fill="#000000" d="M 125,0 L 180,0 C 205,0 218,10 218,27 C 218,37 210,45 198,48 C 212,51 222,60 222,73 C 222,90 208,100 180,100 L 125,100 Z M 160,22 L 160,39 L 176,39 C 185,39 190,35 190,30 C 190,25 185,22 176,22 Z M 160,59 L 160,78 L 178,78 C 188,78 193,73 193,68 C 193,63 188,59 178,59 Z"/>
             <path fill="#000000" d="M 235,12 C 235,4 246,0 278,0 C 310,0 322,4 322,18 L 290,20 C 290,17 286,15 278,15 C 270,15 266,17 266,21 C 266,27 274,29 294,33 C 316,37 325,46 325,62 C 325,88 305,100 278,100 C 250,100 232,88 232,65 L 263,63 C 263,78 269,82 278,82 C 287,82 293,78 293,71 C 293,64 285,62 265,58 C 243,54 235,43 235,26 Z"/>
@@ -238,8 +238,8 @@
 
 <div id="sidebar">
     <div>
-        <!-- DBSW Vector Wordmark SVG -->
-        <svg class="brand-logo-svg" viewBox="0 0 505 100" xmlns="http://www.w3.org/2000/svg">
+        <!-- DBSW Vector Wordmark SVG (Height 18px, Padded ViewBox) -->
+        <svg class="brand-logo-svg" viewBox="-10 -5 540 110" xmlns="http://www.w3.org/2000/svg" style="height: 18px;">
             <path fill="#000000" d="M 0,0 L 52,0 C 95,0 115,16 115,50 C 115,84 95,100 52,100 L 0,100 Z M 36,25 L 36,75 L 50,75 C 72,75 78,68 78,50 C 78,32 72,25 50,25 Z"/>
             <path fill="#000000" d="M 125,0 L 180,0 C 205,0 218,10 218,27 C 218,37 210,45 198,48 C 212,51 222,60 222,73 C 222,90 208,100 180,100 L 125,100 Z M 160,22 L 160,39 L 176,39 C 185,39 190,35 190,30 C 190,25 185,22 176,22 Z M 160,59 L 160,78 L 178,78 C 188,78 193,73 193,68 C 193,63 188,59 178,59 Z"/>
             <path fill="#000000" d="M 235,12 C 235,4 246,0 278,0 C 310,0 322,4 322,18 L 290,20 C 290,17 286,15 278,15 C 270,15 266,17 266,21 C 266,27 274,29 294,33 C 316,37 325,46 325,62 C 325,88 305,100 278,100 C 250,100 232,88 232,65 L 263,63 C 263,78 269,82 278,82 C 287,82 293,78 293,71 C 293,64 285,62 265,58 C 243,54 235,43 235,26 Z"/>
@@ -743,7 +743,7 @@
             var ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, 128, 128);
             ctx.fillStyle = '#000000';
-            ctx.font = 'bold 72px "Helvetica Neue", Helvetica, Arial, sans-serif';
+            ctx.font = 'bold 72px "Helvetica Neue Paneuropean 83 Extended Heavy", "Helvetica Neue Extended", "Helvetica Neue", Helvetica, Arial, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(text, 64, 68);
