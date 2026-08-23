@@ -19,6 +19,7 @@
  * 2. Applied exact half-voxel origin alignment and explicit coordinate clamping
  *    to [0, Lx], [0, Ly], [0, Lz] so extracted surface meshes sit 100% flush inside
  *    the Three.js domain wireframe box and on top of support pads.
+ * 3. Fixed density initialization state during iteration setup to prevent 2x deflection skew.
  */
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
@@ -188,6 +189,11 @@ opt = TopologyOptimiser3DCompliance(
     domain=domain, volfrac=volfrac, penal_k=PENAL_INIT, rmin_mm=150.0,
     notension_weight=NOTENSION_WEIGHT,
 )
+
+# Apply volfrac density to design space for SIMP optimization loop
+opt.x = np.full((domain.nx, domain.ny, domain.nz), volfrac)
+opt.x[domain.passive_mask == 1.0] = 1.0
+opt.x[domain.passive_mask == 0.0] = 0.001
 
 n_stages = int(round((PENAL_FINAL - PENAL_INIT) / PENAL_STEP)) + 1
 continuation_interval = max(1, sim_iterations // n_stages)
