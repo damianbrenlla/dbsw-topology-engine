@@ -473,7 +473,10 @@
 
     <button id="btn-exec" class="btn-primary" onclick="startOptimisation()" disabled>Loading Wasm Engine…</button>
     <button id="btn-stop" class="btn-stop" onclick="stopOptimisation()">■ Stop / Reset Engine</button>
-    <button id="btn-export" class="btn-secondary" onclick="exportSTL()" disabled>Export .STL Geometry</button>
+    <div style="display: flex; gap: 6px; margin-top: 4px;">
+        <button id="btn-export" class="btn-secondary" style="flex: 1;" onclick="exportSTL()" disabled>Export .STL Geometry</button>
+        <button id="btn-clear" class="btn-secondary-danger" style="flex: 1; display: none;" onclick="clearResults()">Clear Results</button>
+    </div>
 
     <div id="status">Initialising WebAssembly Python runtime…</div>
 </div>
@@ -532,8 +535,12 @@
         "Sandstone (50 MPa)": { fb: 50.0, E: 20000.0 }, "Marble (120 MPa)": { fb: 120.0, E: 45000.0 }
     };
 
-    function setEditorGizmosVisible(visible) {
+    // Fine-Grained Gizmo Visibility Controls
+    function setVoidGizmosVisible(visible) {
         voidRegionGizmos.forEach(function(g) { g.visible = visible; });
+    }
+
+    function setBoundaryGizmosVisible(visible) {
         supportGizmos.forEach(function(g) { g.visible = visible; });
         forceArrows.forEach(function(a) { a.visible = visible; });
     }
@@ -1097,8 +1104,9 @@
             voidRegionGizmos.push(regWire);
         });
 
-        // Restore gizmo visibility for setup/editing mode
-        setEditorGizmosVisible(true);
+        // Ensure all gizmos are visible during problem definition
+        setVoidGizmosVisible(true);
+        setBoundaryGizmosVisible(true);
     }
 
     function initWasmEngine() {
@@ -1113,6 +1121,7 @@
         var btnExec = document.getElementById('btn-exec');
         var btnStop = document.getElementById('btn-stop');
         var btnExport = document.getElementById('btn-export');
+        var btnClear = document.getElementById('btn-clear');
 
         if (data.status === 'log') {
             status.style.color = "#000000";
@@ -1140,6 +1149,7 @@
             btnExec.innerText = "Execute Optimisation";
             btnStop.style.display = 'none';
             btnExport.disabled = false;
+            btnClear.style.display = 'block';
 
             currentVertices = data.data.vertices;
             currentFaces = data.data.faces;
@@ -1177,6 +1187,7 @@
         document.getElementById('btn-exec').disabled = true;
         document.getElementById('btn-stop').style.display = 'block';
         document.getElementById('btn-export').disabled = true;
+        document.getElementById('btn-clear').style.display = 'none';
 
         var dofs = '';
         if (document.getElementById('dof_x').checked) dofs += 'x';
@@ -1229,10 +1240,34 @@
         document.getElementById('btn-stop').style.display = 'none';
         document.getElementById('btn-exec').disabled = true;
         document.getElementById('btn-exec').innerText = "Loading Wasm Engine…";
+        document.getElementById('btn-clear').style.display = 'none';
         engineReady = false;
 
         if (worker) worker.terminate();
         initWasmEngine();
+    }
+
+    function clearResults() {
+        currentVertices = [];
+        currentFaces = [];
+        currentStressesMPa = [];
+        currentDeflectionsMM = [];
+
+        if (mesh) {
+            scene.remove(mesh);
+            mesh = null;
+        }
+
+        document.getElementById('legend').style.display = 'none';
+        document.getElementById('btn-export').disabled = true;
+        document.getElementById('btn-clear').style.display = 'none';
+
+        var status = document.getElementById('status');
+        status.style.color = "#000000";
+        status.style.borderLeftColor = "#000000";
+        status.innerText = "Results cleared. Ready to define parameters.";
+
+        updateDomainVisuals();
     }
 
     function formatMPa(val) {
@@ -1274,8 +1309,9 @@
         // Guard check: only proceed if solved topology geometry exists
         if (!currentVertices.length || !currentFaces.length) return;
 
-        // Hide editor overlay gizmos ONLY when revealing a solved mesh
-        setEditorGizmosVisible(false);
+        // Hide ONLY translucent void boxes; keep physical supports/loads visible
+        setVoidGizmosVisible(false);
+        setBoundaryGizmosVisible(true);
 
         if (mode === 'ec3_stress' || mode === 'deflection') {
             updateLegendLabels(isDeflectionMode);
