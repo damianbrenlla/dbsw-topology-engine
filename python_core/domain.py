@@ -51,10 +51,7 @@ class Domain3D:
         self.material_type = mat_lower
         self.material_name = material_name
 
-        # Unit weight, converted from kN/m3 (Eurocode convention) to N/mm3
-        # (1 kN/m3 = 1000 N / 1e9 mm3 = 1e-6 N/mm3), used for the optional
-        # design-dependent self-weight body force. gamma_kn_m3 = 0.0 disables
-        # self-weight entirely.
+        # Unit weight: 1 kN/m3 = 1e-6 N/mm3
         self.gamma_kn_m3 = float(gamma_kn_m3)
         self.gamma_n_mm3 = self.gamma_kn_m3 * 1e-6
 
@@ -98,6 +95,8 @@ class Domain3D:
                                 ey = min(iy, self.ny - 1)
                                 ez = min(iz, self.nz - 1)
                                 self.passive_mask[ex, ey, ez] = 1.0
+
+        self.fixed_dofs = list(set(self.fixed_dofs))
 
     def add_point_load(self, coord_xyz, force_xyz):
         """Applies point force [Fx, Fy, Fz] in N and protects surrounding elements as solid."""
