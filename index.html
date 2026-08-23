@@ -6,12 +6,12 @@
     
     <!-- 1. SEO Primary Metadata -->
     <title>3D SIMP Topology Optimisation Engine | WebAssembly FEA — DBSW</title>
-    <meta name="description" content="Browser-native 3D SIMP structural topology optimisation engine powered by Python and WebAssembly. Features Eurocode 2/3/5 material logic, non-linear continuum mechanics, and interactive 3D section cut-planes.">
+    <meta name="description" content="Browser-native 3D SIMP structural topology optimisation engine powered by Python and WebAssembly. Features Eurocode 2/3/5/6 material logic, non-linear continuum mechanics, and interactive 3D section cut-planes.">
     <meta name="keywords" content="Structural Topology Optimisation, 3D SIMP FEA, WebAssembly Finite Element Analysis, Eurocode Structural Engineering, Low Carbon Structural Design, Strut and Tie Model Generator, DBSW Engineering">
     <meta name="author" content="Damian Brenlla / DBSW">
     <link rel="canonical" href="https://topology.dbsw.uk/" />
 
-    <!-- 2. Open Graph / Social Audit Metadata (LinkedIn / Twitter Preview Cards) -->
+    <!-- 2. Open Graph / Social Audit Metadata -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="DBSW Engineering">
     <meta property="og:title" content="DBSW 3D Topology Engine — Client-Side WASM FEA">
@@ -19,7 +19,7 @@
     <meta property="og:url" content="https://topology.dbsw.uk/">
     <meta property="og:image" content="https://topology.dbsw.uk/assets/og-preview.jpg">
 
-    <!-- 3. Structured Data (JSON-LD for Technical Authority & Search Rich Snippets) -->
+    <!-- 3. Structured Data (JSON-LD) -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -52,34 +52,18 @@
         }
         
         /* DBSW Custom Minimalist Scrollbar Palette */
-        #sidebar::-webkit-scrollbar {
-            width: 6px;
-        }
-        #sidebar::-webkit-scrollbar-track {
-            background: #ffffff;
-            border-left: 1px solid #e5e5e5;
-        }
-        #sidebar::-webkit-scrollbar-thumb {
-            background: #000000;
-            border-radius: 0px;
-        }
-        #sidebar::-webkit-scrollbar-thumb:hover {
-            background: #333333;
-        }
+        #sidebar::-webkit-scrollbar { width: 6px; }
+        #sidebar::-webkit-scrollbar-track { background: #ffffff; border-left: 1px solid #e5e5e5; }
+        #sidebar::-webkit-scrollbar-thumb { background: #000000; border-radius: 0px; }
+        #sidebar::-webkit-scrollbar-thumb:hover { background: #333333; }
         #sidebar::-webkit-scrollbar-button:single-button {
-            background-color: #ffffff;
-            display: block;
-            border-style: solid;
-            height: 10px;
-            width: 6px;
+            background-color: #ffffff; display: block; border-style: solid; height: 10px; width: 6px;
         }
         #sidebar::-webkit-scrollbar-button:single-button:vertical:decrement {
-            border-width: 0 3px 5px 3px;
-            border-color: transparent transparent #000000 transparent;
+            border-width: 0 3px 5px 3px; border-color: transparent transparent #000000 transparent;
         }
         #sidebar::-webkit-scrollbar-button:single-button:vertical:increment {
-            border-width: 5px 3px 0 3px;
-            border-color: #000000 transparent transparent transparent;
+            border-width: 5px 3px 0 3px; border-color: #000000 transparent transparent transparent;
         }
 
         #sidebar {
@@ -101,24 +85,12 @@
         input:focus, select:focus { border-color: #000000; }
 
         input[type="range"] {
-            -webkit-appearance: none;
-            width: 100%;
-            height: 4px;
-            background: #e5e5e5;
-            outline: none;
-            margin: 6px 0;
-            padding: 0;
-            border: none;
+            -webkit-appearance: none; width: 100%; height: 4px; background: #e5e5e5;
+            outline: none; margin: 6px 0; padding: 0; border: none;
         }
         input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 14px;
-            height: 14px;
-            background: #555555;
-            cursor: pointer;
-            border-radius: 0px;
-            transition: background 0.15s ease;
+            -webkit-appearance: none; appearance: none; width: 14px; height: 14px;
+            background: #555555; cursor: pointer; border-radius: 0px; transition: background 0.15s ease;
         }
         input[type="range"]::-webkit-slider-thumb:hover { background: #000000; }
         input[type="range"]::-moz-range-thumb {
@@ -168,7 +140,7 @@
         .checkbox-group label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
         input[type="checkbox"] { accent-color: #000000; }
         
-        /* Data Tables for Supports/Loads */
+        /* Compact Data Tables */
         .data-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; margin-top: 4px; }
         .data-table th { text-align: left; background: #f5f5f5; padding: 4px 6px; border: 1px solid #e5e5e5; font-weight: 600; }
         .data-table td { padding: 2px; border: 1px solid #e5e5e5; }
@@ -203,9 +175,7 @@
         }
         #intro-modal h2 { margin: 0 0 2px 0; letter-spacing: 1.5px; }
         #intro-modal .subtitle { margin-bottom: 16px; }
-        #intro-modal p {
-            font-size: 0.82rem; line-height: 1.5; color: #222222; margin: 0 0 14px 0;
-        }
+        #intro-modal p { font-size: 0.82rem; line-height: 1.5; color: #222222; margin: 0 0 14px 0; }
         #intro-modal ul { margin: 0 0 16px 0; padding-left: 18px; }
         #intro-modal li { font-size: 0.78rem; line-height: 1.55; color: #333333; margin-bottom: 3px; }
         #intro-modal .author-line {
@@ -562,6 +532,12 @@
         "Sandstone (50 MPa)": { fb: 50.0, E: 20000.0 }, "Marble (120 MPa)": { fb: 120.0, E: 45000.0 }
     };
 
+    function setEditorGizmosVisible(visible) {
+        voidRegionGizmos.forEach(function(g) { g.visible = visible; });
+        supportGizmos.forEach(function(g) { g.visible = visible; });
+        forceArrows.forEach(function(a) { a.visible = visible; });
+    }
+
     function updateMaterialUI() {
         var matType = document.getElementById('mat_type').value;
         var stdDiv = document.getElementById('mat_standard_div');
@@ -673,7 +649,6 @@
         scene.add(grid);
 
         // --- Minimalistic black/white axis triad (bottom-left corner) ---
-        // Domain coords: X → Three.X, Z(height) → Three.Y, Y(width) → Three.Z
         axesScene = new THREE.Scene();
         axesCamera = new THREE.OrthographicCamera(-2.0, 2.0, 2.0, -2.0, 0.1, 10);
         axesCamera.position.set(0, 0, 5);
@@ -734,7 +709,6 @@
         window.addEventListener('resize', onWindowResize);
         updateMaterialUI();
 
-        // Add default pin/roller supports to Discrete Table for initial simple span baseline
         var tbody = document.getElementById('support_table_body');
         if (tbody && tbody.children.length === 0) {
             addSupportRow(0, 150, 0, 'xyz');
@@ -752,7 +726,6 @@
         controls.update();
         renderer.render(scene, camera);
 
-        // Axis triad: orient to world axes as seen by the main camera, draw in corner
         if (axesGroup && axesScene && axesCamera) {
             axesGroup.quaternion.copy(camera.quaternion).invert();
 
@@ -762,7 +735,6 @@
             var w = container.clientWidth;
             var h = container.clientHeight;
 
-            // Prevent the second render from clearing the scissor region to black
             renderer.autoClear = false;
             renderer.clearDepth();
             renderer.setScissorTest(true);
@@ -1124,6 +1096,9 @@
             scene.add(regWire);
             voidRegionGizmos.push(regWire);
         });
+
+        // Restore gizmo visibility for setup/editing mode
+        setEditorGizmosVisible(true);
     }
 
     function initWasmEngine() {
@@ -1296,6 +1271,12 @@
         var mode = document.getElementById('render_mode').value;
         var isDeflectionMode = (mode === 'deflection');
 
+        // Guard check: only proceed if solved topology geometry exists
+        if (!currentVertices.length || !currentFaces.length) return;
+
+        // Hide editor overlay gizmos ONLY when revealing a solved mesh
+        setEditorGizmosVisible(false);
+
         if (mode === 'ec3_stress' || mode === 'deflection') {
             updateLegendLabels(isDeflectionMode);
             legend.style.display = 'flex';
@@ -1303,7 +1284,6 @@
             legend.style.display = 'none';
         }
 
-        if (!currentVertices.length || !currentFaces.length) return;
         if (mesh) scene.remove(mesh);
 
         var geometry = new THREE.BufferGeometry();
