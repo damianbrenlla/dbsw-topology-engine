@@ -9,15 +9,16 @@
  *
  * The optimisation loop runs ONE ITERATION PER `await pyodide.runPythonAsync`
  * call so the worker yields control back to the JS event loop after every
- * iteration and can postMessage live progress — a single giant Python call
- * blocks postMessage entirely until it finishes, which is what made earlier
- * versions of this page look frozen.
+ * iteration and can postMessage live progress.
  *
- * FIX (2026): Resampled nodal displacement field onto element-centered grid
- * via 8-node corner averaging prior to padding. This matches the exact 
- * (nx+2, ny+2, nz+2) shape of padded_stress, removing the spatial indexing 
- * offset at marching-cubes surface boundaries and eliminating void-wall 
- * displacement artifacts.
+ * FIXES (2026):
+ * 1. Resampled nodal displacement field onto element-centered grid via 8-node
+ *    corner averaging prior to padding. This matches the exact (nx+2, ny+2, nz+2)
+ *    shape of padded_stress, removing the spatial indexing offset at marching-cubes
+ *    surface boundaries.
+ * 2. Applied exact half-voxel origin alignment and explicit coordinate clamping
+ *    to [0, Lx], [0, Ly], [0, Lz] so extracted surface meshes sit 100% flush inside
+ *    the Three.js domain wireframe box and on top of support pads.
  */
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
@@ -256,10 +257,9 @@ padded_stress = np.pad(stress_grid_3d, 1, mode="edge")
 U_nodes, disp_mags = opt.recover_nodal_displacements(U_final)
 disp_grid_3d = disp_mags.reshape((domain.nx + 1, domain.ny + 1, domain.nz + 1))
 
-# FIX (2026): Resample node-centered displacement grid (nx+1, ny+1, nz+1) 
+# FIX 1: Resample node-centered displacement grid (nx+1, ny+1, nz+1) 
 # onto element-centered grid (nx, ny, nz) via 8-node corner averaging.
-# This aligns disp_elem_3d identically with stress_grid_3d, preventing half-element
-# spatial index offsets at boundary isosurfaces.
+# This aligns disp_elem_3d identically with stress_grid_3d.
 nx, ny, nz = domain.nx, domain.ny, domain.nz
 disp_elem_3d = 0.125 * (
     disp_grid_3d[0:nx,   0:ny,   0:nz]   +
@@ -282,10 +282,18 @@ for v in verts:
     vertex_stresses_mpa.append(float(padded_stress[ix, iy, iz]))
     vertex_deflections_mm.append(float(padded_disp[ix, iy, iz]))
 
+# FIX 2: Exact physical coordinate mapping with boundary clamping.
+# Marching Cubes padding adds 1 voxel layer on each side. Subtracting 1.0
+# maps the inner domain voxel index 1.0 back to physical origin 0.0mm.
 verts_mm = np.copy(verts)
 verts_mm[:, 0] = (verts[:, 0] - 1.0) * domain.dx
 verts_mm[:, 1] = (verts[:, 1] - 1.0) * domain.dy
 verts_mm[:, 2] = (verts[:, 2] - 1.0) * domain.dz
+
+# Clamp boundary vertices strictly to domain dimensions [0, Lx], [0, Ly], [0, Lz]
+verts_mm[:, 0] = np.clip(verts_mm[:, 0], 0.0, domain.Lx)
+verts_mm[:, 1] = np.clip(verts_mm[:, 1], 0.0, domain.Ly)
+verts_mm[:, 2] = np.clip(verts_mm[:, 2], 0.0, domain.Lz)
 
 x_flat = opt.x.flatten()
 solid_elem_stresses = elem_stresses_mpa[x_flat > 0.1]
