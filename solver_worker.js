@@ -13,12 +13,11 @@
  * blocks postMessage entirely until it finishes, which is what made earlier
  * versions of this page look frozen.
  *
- * FIX (2026): Removed the silent "no loads defined -> apply a default
- * -100kN tip load" fallback. That fallback meant deleting every row in the
- * custom load table did NOT give you a zero-load model — it silently
- * substituted a synthetic demo load, so stress/deflection maps kept showing
- * non-zero results even with self-weight switched off. An empty load array
- * now correctly means zero external load.
+ * FIX (2026): Resampled nodal displacement field onto element-centered grid
+ * via 8-node corner averaging prior to padding. This matches the exact 
+ * (nx+2, ny+2, nz+2) shape of padded_stress, removing the spatial indexing 
+ * offset at marching-cubes surface boundaries and eliminating void-wall 
+ * displacement artifacts.
  */
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
@@ -100,7 +99,6 @@ self.onmessage = async function(e) {
             pyodide.globals.set("NOTENSION_WEIGHT", NOTENSION_WEIGHT);
 
             // 1. ONE-OFF SETUP: material, domain, supports, loads, optimiser instance.
-            // Mirrors sections 1-5 of async_optimise_worker() in app.py.
             await pyodide.runPythonAsync(`
 t0 = time.time()
 payload = json.loads(payload_json)
@@ -116,11 +114,6 @@ domain = Domain3D(
 )
 
 # --- Void / Forced-Solid Passive Regions ---
-# Writes directly into domain.passive_mask, the same array the SIMP update
-# step already checks every iteration (see the xnew[domain.passive_mask...]
-# lines further down). A region tagged "void" pins those elements to near-
-# zero density; "solid" pins them fully solid — either way the optimiser is
-# no longer free to choose for those elements, regardless of load path.
 void_regions = payload.get("void_regions", [])
 if void_regions:
     _rx = (np.arange(domain.nx) + 0.5) * domain.dx
@@ -151,9 +144,6 @@ if sup_mode == "preset":
         domain.add_support_box([0.0, 0.0], [domain.Ly, domain.Ly], [0.0, 0.0], dofs="xyz")
         domain.add_support_box([domain.Lx, domain.Lx], [domain.Ly, domain.Ly], [0.0, 0.0], dofs="xyz")
     elif sup_preset == "all_edges":
-        # All Bottom Edges Supported: restrains a thin band along the full
-        # perimeter of the Z=0 (bottom) face, like a simply-supported slab
-        # bearing on walls along all four sides.
         edge_t = max(domain.dx, domain.dy, domain.dz) * 1.5
         domain.add_support_box([0.0, domain.Lx], [0.0, edge_t], [0.0, 0.0], dofs="xyz")
         domain.add_support_box([0.0, domain.Lx], [domain.Ly - edge_t, domain.Ly], [0.0, 0.0], dofs="xyz")
@@ -164,10 +154,6 @@ elif sup_mode == "custom":
     y_b = [float(payload.get("sup_y_min", 0)), float(payload.get("sup_y_max", domain.Ly))]
     z_b = [float(payload.get("sup_z_min", 0)), float(payload.get("sup_z_max", domain.Lz))]
     domain.add_support_box(x_b, y_b, z_b, dofs=payload.get("sup_dofs", "xyz"))
-# else sup_mode == "points_only": intentionally no preset or bounding-box
-# restraint is added here. Restraint comes ENTIRELY from the point_supports
-# loop below, so the discrete support table has to be sufficient on its own
-# to prevent rigid-body motion.
 
 for ps in payload.get("point_supports", []):
     r = 15.0
@@ -184,12 +170,6 @@ if load_preset == "top_udl":
         total_load_xyz=[0.0, 0.0, -100000.0],
     )
 else:
-    # FIX: an empty load array is a valid, intentional zero-load case
-    # (e.g. testing self-weight-only behaviour). No synthetic fallback load
-    # is injected here any more — previously this silently added a
-    # -100kN tip load whenever the table was emptied, which is why
-    # stress/deflection maps kept showing non-zero results even with
-    # self-weight switched off.
     for ld in payload.get("loads", []):
         px, py, pz = float(ld["x"]), float(ld["y"]), float(ld["z"])
         fx = float(ld.get("Fx", 0.0)) * 1000.0
@@ -212,8 +192,7 @@ n_stages = int(round((PENAL_FINAL - PENAL_INIT) / PENAL_STEP)) + 1
 continuation_interval = max(1, sim_iterations // n_stages)
             `);
 
-            // 2. ONE SIMP ITERATION PER AWAIT — yields control back to JS each time
-            // so progress can actually reach the page. Mirrors section 6 of app.py.
+            // 2. ONE SIMP ITERATION PER AWAIT
             for (let i = 0; i < iterations; i++) {
                 pyodide.globals.set("i", i);
                 const t0 = performance.now();
@@ -261,21 +240,38 @@ opt.x = xnew
 
             postMessage({ status: "running", current_iter: iterations, total_iter: iterations, phase: "Extracting mesh & recovering fields" });
 
-            // 3. Final solve on x_final + mesh extraction + stress/displacement field
-            // recovery. Mirrors section 7 of app.py.
+            // 3. Final solve on x_final + mesh extraction + stress/displacement field recovery.
             const resultJson = await pyodide.runPythonAsync(`
 U_final, K_final, _ = opt.assemble_and_solve_static(opt.x, include_self_weight=include_self_weight)
 
 padded_x = np.pad(opt.x, 1, mode="constant", constant_values=0)
 verts, faces, _, _ = measure.marching_cubes(padded_x, level=0.50)
 
+# Element stress field (nx, ny, nz)
 elem_stresses_mpa = opt.recover_element_stress_field(U_final)
 stress_grid_3d = elem_stresses_mpa.reshape((domain.nx, domain.ny, domain.nz))
 padded_stress = np.pad(stress_grid_3d, 1, mode="edge")
 
+# Nodal displacement field (nx+1, ny+1, nz+1)
 U_nodes, disp_mags = opt.recover_nodal_displacements(U_final)
 disp_grid_3d = disp_mags.reshape((domain.nx + 1, domain.ny + 1, domain.nz + 1))
-padded_disp = np.pad(disp_grid_3d, 1, mode="edge")
+
+# FIX (2026): Resample node-centered displacement grid (nx+1, ny+1, nz+1) 
+# onto element-centered grid (nx, ny, nz) via 8-node corner averaging.
+# This aligns disp_elem_3d identically with stress_grid_3d, preventing half-element
+# spatial index offsets at boundary isosurfaces.
+nx, ny, nz = domain.nx, domain.ny, domain.nz
+disp_elem_3d = 0.125 * (
+    disp_grid_3d[0:nx,   0:ny,   0:nz]   +
+    disp_grid_3d[1:nx+1, 0:ny,   0:nz]   +
+    disp_grid_3d[0:nx,   1:ny+1, 0:nz]   +
+    disp_grid_3d[1:nx+1, 1:ny+1, 0:nz]   +
+    disp_grid_3d[0:nx,   0:ny,   1:nz+1] +
+    disp_grid_3d[1:nx+1, 0:ny,   1:nz+1] +
+    disp_grid_3d[0:nx,   1:ny+1, 1:nz+1] +
+    disp_grid_3d[1:nx+1, 1:ny+1, 1:nz+1]
+)
+padded_disp = np.pad(disp_elem_3d, 1, mode="edge")
 
 vertex_stresses_mpa = []
 vertex_deflections_mm = []
@@ -302,14 +298,6 @@ else:
 
 sigma_max_abs = max(abs(sigma_max_tens), abs(sigma_max_comp))
 
-# FIX: u_max previously came from disp_mags, the max over EVERY node in the
-# full domain grid — including nodes inside low-density "ghost" material
-# that the marching-cubes isosurface (threshold 0.5) never actually renders.
-# That let the legend claim a peak (e.g. "14.01mm = red") that no visible
-# point on the mesh could ever reach, since the rendered colours are sampled
-# from vertex_deflections_mm — the extracted surface's own vertices — not
-# from disp_mags. Scaling the legend from the same array that's actually
-# painted on the mesh guarantees the two can never disagree.
 if len(vertex_deflections_mm) > 0:
     u_max = float(np.max(np.abs(vertex_deflections_mm)))
 else:
