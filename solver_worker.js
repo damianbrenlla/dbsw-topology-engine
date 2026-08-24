@@ -3,30 +3,27 @@
  * Author: Damian Brenlla / DBSW 2026
  *
  * This mirrors the orchestration logic in the Flask app.py version (support
- * presets/custom boxes, point supports, load presets/point loads, optional
- * self-weight, approximate no-tension sensitivity penalty, penal_k
+ * presets/custom boxes, point supports, line supports, load presets/point loads,
+ * optional self-weight, approximate no-tension sensitivity penalty, penal_k
  * continuation) but runs it inside Pyodide instead of a server process.
  *
  * The optimisation loop runs ONE ITERATION PER `await pyodide.runPythonAsync`
  * call so the worker yields control back to the JS event loop after every
  * iteration and can postMessage live progress.
  *
- * FIXES (2026):
+ * FEATURES & FIXES:
  * 1. Resampled nodal displacement field onto element-centered grid via 8-node
- *    corner averaging prior to padding. This matches the exact (nx+2, ny+2, nz+2)
- *    shape of padded_stress, removing the spatial indexing offset at marching-cubes
- *    surface boundaries.
+ *    corner averaging prior to padding to match padded_stress shape.
  * 2. Applied exact half-voxel origin alignment and explicit coordinate clamping
- *    to [0, Lx], [0, Ly], [0, Lz] so extracted surface meshes sit 100% flush inside
- *    the Three.js domain wireframe box and on top of support pads.
- * 3. Fixed density initialization state during iteration setup to prevent 2x deflection skew.
+ *    to [0, Lx], [0, Ly], [0, Lz] for flush Three.js mesh alignment.
+ * 3. 3D Line Support Discretisation: Vector sampling along P1->P2 mapping discrete
+ *    restraint chains directly onto K-matrix boundary condition DOFs.
  */
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
 
 let pyodide = null;
 
-// Mirrors PENAL_INIT / PENAL_FINAL / PENAL_STEP / NOTENSION_WEIGHT in app.py
 const PENAL_INIT = 1.0;
 const PENAL_FINAL = 3.0;
 const PENAL_STEP = 0.5;
@@ -100,7 +97,7 @@ self.onmessage = async function(e) {
             pyodide.globals.set("PENAL_STEP", PENAL_STEP);
             pyodide.globals.set("NOTENSION_WEIGHT", NOTENSION_WEIGHT);
 
-            // 1. ONE-OFF SETUP: material, domain, supports, loads, optimiser instance.
+            // 1. ONE-OFF SETUP: material, domain, supports, line supports, loads, optimiser instance.
             await pyodide.runPythonAsync(`
 t0 = time.time()
 payload = json.loads(payload_json)
@@ -157,10 +154,36 @@ elif sup_mode == "custom":
     z_b = [float(payload.get("sup_z_min", 0)), float(payload.get("sup_z_max", domain.Lz))]
     domain.add_support_box(x_b, y_b, z_b, dofs=payload.get("sup_dofs", "xyz"))
 
+# Discrete Point Supports
 for ps in payload.get("point_supports", []):
     r = 15.0
     px, py, pz = float(ps["x"]), float(ps["y"]), float(ps["z"])
     domain.add_support_box([px - r, px + r], [py - r, py + r], [pz - r, pz + r], dofs=ps.get("dofs", "xyz"))
+
+# --- Discrete Line Supports Discretisation ---
+line_supports = payload.get("line_supports", [])
+for ls in line_supports:
+    p1 = np.array([float(ls["x1"]), float(ls["y1"]), float(ls["z1"])])
+    p2 = np.array([float(ls["x2"]), float(ls["y2"]), float(ls["z2"])])
+    dofs = ls.get("dofs", "xyz")
+    
+    vec = p2 - p1
+    length = np.linalg.norm(vec)
+    if length > 1e-6:
+        # Sample points along the vector at sub-voxel resolution (half min-voxel step)
+        min_step = min(domain.dx, domain.dy, domain.dz) * 0.5
+        n_samples = max(2, int(np.ceil(length / min_step)))
+        t_steps = np.linspace(0.0, 1.0, n_samples)
+        
+        r = min_step * 0.75
+        for t in t_steps:
+            pt = p1 + t * vec
+            domain.add_support_box(
+                [pt[0] - r, pt[0] + r],
+                [pt[1] - r, pt[1] + r],
+                [pt[2] - r, pt[2] + r],
+                dofs=dofs
+            )
 
 # --- Loading Conditions ---
 load_preset = payload.get("load_preset", "custom")
@@ -190,7 +213,6 @@ opt = TopologyOptimiser3DCompliance(
     notension_weight=NOTENSION_WEIGHT,
 )
 
-# Apply volfrac density to design space for SIMP optimization loop
 opt.x = np.full((domain.nx, domain.ny, domain.nz), volfrac)
 opt.x[domain.passive_mask == 1.0] = 1.0
 opt.x[domain.passive_mask == 0.0] = 0.001
@@ -263,9 +285,7 @@ padded_stress = np.pad(stress_grid_3d, 1, mode="edge")
 U_nodes, disp_mags = opt.recover_nodal_displacements(U_final)
 disp_grid_3d = disp_mags.reshape((domain.nx + 1, domain.ny + 1, domain.nz + 1))
 
-# FIX 1: Resample node-centered displacement grid (nx+1, ny+1, nz+1) 
-# onto element-centered grid (nx, ny, nz) via 8-node corner averaging.
-# This aligns disp_elem_3d identically with stress_grid_3d.
+# Resample node-centered displacement grid onto element-centered grid via 8-node corner averaging
 nx, ny, nz = domain.nx, domain.ny, domain.nz
 disp_elem_3d = 0.125 * (
     disp_grid_3d[0:nx,   0:ny,   0:nz]   +
@@ -288,15 +308,11 @@ for v in verts:
     vertex_stresses_mpa.append(float(padded_stress[ix, iy, iz]))
     vertex_deflections_mm.append(float(padded_disp[ix, iy, iz]))
 
-# FIX 2: Exact physical coordinate mapping with boundary clamping.
-# Marching Cubes padding adds 1 voxel layer on each side. Subtracting 1.0
-# maps the inner domain voxel index 1.0 back to physical origin 0.0mm.
 verts_mm = np.copy(verts)
 verts_mm[:, 0] = (verts[:, 0] - 1.0) * domain.dx
 verts_mm[:, 1] = (verts[:, 1] - 1.0) * domain.dy
 verts_mm[:, 2] = (verts[:, 2] - 1.0) * domain.dz
 
-# Clamp boundary vertices strictly to domain dimensions [0, Lx], [0, Ly], [0, Lz]
 verts_mm[:, 0] = np.clip(verts_mm[:, 0], 0.0, domain.Lx)
 verts_mm[:, 1] = np.clip(verts_mm[:, 1], 0.0, domain.Ly)
 verts_mm[:, 2] = np.clip(verts_mm[:, 2], 0.0, domain.Lz)
