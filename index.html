@@ -322,7 +322,7 @@
         <select id="support_mode" onchange="toggleSupportMode()">
             <option value="preset">Preset Configurations</option>
             <option value="custom">Arbitrary Spatial Bounding Box</option>
-            <option value="points_only">Only User-Selected Discrete Points</option>
+            <option value="points_only">Only User-Selected Discrete Points/Lines</option>
         </select>
     </div>
 
@@ -364,24 +364,43 @@
         </div>
     </div>
 
+    <!-- Discrete Point Supports Generator Module -->
     <div class="control-group" style="margin-top: 4px;">
         <div class="load-header-row">
             <label style="margin: 0;">Discrete Point Supports (mm / DOFs)</label>
             <div class="btn-group">
                 <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addSupportRow()">+ Add Support Node</button>
-                <button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllSupports()">Clear All Supports</button>
+                <button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllSupports()">Clear Point Supports</button>
             </div>
         </div>
         <table class="data-table">
             <thead><tr><th>X</th><th>Y</th><th>Z</th><th>DOFs</th><th></th></tr></thead>
             <tbody id="support_table_body"></tbody>
         </table>
+    </div>
+
+    <!-- NEW: Discrete Line Supports Generator Module (2 Points in 3D Space) -->
+    <div class="control-group" style="margin-top: 6px;">
+        <div class="load-header-row">
+            <label style="margin: 0;">Discrete Line Supports (2-Point Generator)</label>
+            <div class="btn-group">
+                <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addLineSupportRow()">+ Add Line Support</button>
+                <button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllLineSupports()">Clear Line Supports</button>
+            </div>
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>X1</th><th>Y1</th><th>Z1</th>
+                    <th>X2</th><th>Y2</th><th>Z2</th>
+                    <th>DOFs</th><th></th>
+                </tr>
+            </thead>
+            <tbody id="line_support_table_body"></tbody>
+        </table>
         <p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 4px 0 0 0;">
-            With Support Mode set to "Only User-Selected Discrete Points"
-            above, these rows are the <em>only</em> restraint the model has —
-            the preset and bounding-box restraints are ignored entirely. Make
-            sure enough nodes are restrained across enough DOFs to prevent
-            rigid-body motion, or the solve will fail or return nonsense.
+            With Support Mode set to "Only User-Selected Discrete Points/Lines"
+            above, these tables define the <em>only</em> boundary restraints. Line supports generate nodal restraint chains along the 3D vector. Make sure enough DOFs are locked across nodes to prevent rigid-body motion.
         </p>
     </div>
 
@@ -830,6 +849,28 @@
         updateDomainVisuals();
     }
 
+    /* NEW: Add Discrete Line Support Row Generator */
+    function addLineSupportRow(x1, y1, z1, x2, y2, z2, dofs) {
+        var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
+        x1 = (x1 === undefined) ? 0 : x1; y1 = (y1 === undefined) ? 0 : y1; z1 = (z1 === undefined) ? 0 : z1;
+        x2 = (x2 === undefined) ? Lx : x2; y2 = (y2 === undefined) ? 0 : y2; z2 = (z2 === undefined) ? 0 : z2;
+        dofs = (dofs === undefined) ? 'xyz' : dofs;
+
+        var tbody = document.getElementById('line_support_table_body');
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+            '<td><input type="number" class="lsp-x1" value="' + x1 + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><input type="number" class="lsp-y1" value="' + y1 + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><input type="number" class="lsp-z1" value="' + z1 + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><input type="number" class="lsp-x2" value="' + x2 + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><input type="number" class="lsp-y2" value="' + y2 + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><input type="number" class="lsp-z2" value="' + z2 + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><input type="text" class="lsp-dofs" value="' + dofs + '" oninput="updateDomainVisuals()"></td>' +
+            '<td><button class="btn-del" onclick="deleteRow(this)">×</button></td>';
+        tbody.appendChild(tr);
+        updateDomainVisuals();
+    }
+
     function addLoadRow(x, y, z, Fx, Fy, Fz) {
         x = (x === undefined) ? 1200 : x; y = (y === undefined) ? 150 : y; z = (z === undefined) ? 600 : z;
         Fx = (Fx === undefined) ? 0 : Fx; Fy = (Fy === undefined) ? 0 : Fy; Fz = (Fz === undefined) ? -12.5 : Fz;
@@ -855,6 +896,12 @@
 
     function clearAllSupports() {
         var tbody = document.getElementById('support_table_body');
+        tbody.innerHTML = '';
+        updateDomainVisuals();
+    }
+
+    function clearAllLineSupports() {
+        var tbody = document.getElementById('line_support_table_body');
         tbody.innerHTML = '';
         updateDomainVisuals();
     }
@@ -1004,6 +1051,24 @@
         return supports;
     }
 
+    /* NEW: Extract Line Support Table Data */
+    function getLineSupportArrayData() {
+        var rows = document.querySelectorAll('#line_support_table_body tr');
+        var lineSupports = [];
+        rows.forEach(function(r) {
+            lineSupports.push({
+                x1: parseFloat(r.querySelector('.lsp-x1').value) || 0,
+                y1: parseFloat(r.querySelector('.lsp-y1').value) || 0,
+                z1: parseFloat(r.querySelector('.lsp-z1').value) || 0,
+                x2: parseFloat(r.querySelector('.lsp-x2').value) || 0,
+                y2: parseFloat(r.querySelector('.lsp-y2').value) || 0,
+                z2: parseFloat(r.querySelector('.lsp-z2').value) || 0,
+                dofs: (r.querySelector('.lsp-dofs').value || 'xyz').toLowerCase()
+            });
+        });
+        return lineSupports;
+    }
+
     function updateDomainVisuals() {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         var Ly = parseFloat(document.getElementById('Ly').value) || 300;
@@ -1088,6 +1153,7 @@
             supportGizmos.push(supMesh);
         }
 
+        // Render Discrete Point Supports
         var pointSups = getPointSupportArrayData();
         var ptPinGeo = new THREE.ConeGeometry(size * 0.4, size * 0.7, 4);
         var ptRollerGeo = new THREE.CylinderGeometry(size * 0.2, size * 0.2, size * 0.7, 16);
@@ -1107,6 +1173,32 @@
 
             scene.add(ptMesh);
             supportGizmos.push(ptMesh);
+        });
+
+        /* NEW: Render Discrete 3D Line Support Gizmos */
+        var lineSups = getLineSupportArrayData();
+        lineSups.forEach(function(ls) {
+            var p1 = new THREE.Vector3(ls.x1, ls.z1, ls.y1);
+            var p2 = new THREE.Vector3(ls.x2, ls.z2, ls.y2);
+            var lineVec = new THREE.Vector3().subVectors(p2, p1);
+            var len = lineVec.length();
+
+            if (len > 1e-3) {
+                var isPin = ls.dofs.includes('x') && ls.dofs.includes('y') && ls.dofs.includes('z');
+                var mat = isPin ? pinMat : rollerMat;
+                
+                var cylGeo = new THREE.CylinderGeometry(size * 0.15, size * 0.15, len, 12);
+                var cylMesh = new THREE.Mesh(cylGeo, mat);
+                
+                var mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+                cylMesh.position.copy(mid);
+                
+                var axis = new THREE.Vector3(0, 1, 0);
+                cylMesh.quaternion.setFromUnitVectors(axis, lineVec.clone().normalize());
+                
+                scene.add(cylMesh);
+                supportGizmos.push(cylMesh);
+            }
         });
 
         forceArrows.forEach(function(a) { scene.remove(a); });
@@ -1207,7 +1299,6 @@
             currentUMax = data.data.u_max;
             currentFk = data.data.f_k || 30.0;
 
-            // Configure slider bounds rounded up to exact hundredths
             var compSlider = document.getElementById('stress_comp_slider');
             var tensSlider = document.getElementById('stress_tens_slider');
 
@@ -1281,6 +1372,7 @@
             sup_z_max: parseFloat(document.getElementById('sup_z_max').value),
             sup_dofs: dofs,
             point_supports: getPointSupportArrayData(),
+            line_supports: getLineSupportArrayData(), // Dispatches Line Supports Array
             load_preset: document.getElementById('load_preset').value,
             loads: getLoadArrayData(),
             void_regions: getVoidRegionArrayData(),
@@ -1390,7 +1482,6 @@
         var activeMaxComp = -Math.abs(parseFloat(document.getElementById('stress_comp_slider').value) || Math.abs(currentSigmaMaxComp));
         var activeMaxTens = parseFloat(document.getElementById('stress_tens_slider').value) || currentSigmaMaxTens;
 
-        // Interactive threshold colormap: outside user bounds renders Studio Grey (#808080)
         var colorScaleSignedAsymmetric = function(val, maxTens, minComp) {
             if (val > maxTens || val < minComp) {
                 return new THREE.Color(0x808080);
