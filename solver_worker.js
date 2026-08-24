@@ -16,8 +16,26 @@
  *    corner averaging prior to padding to match padded_stress shape.
  * 2. Applied exact half-voxel origin alignment and explicit coordinate clamping
  *    to [0, Lx], [0, Ly], [0, Lz] for flush Three.js mesh alignment.
- * 3. 3D Line Support Discretisation: Vector sampling along P1->P2 mapping discrete
- *    restraint chains directly onto K-matrix boundary condition DOFs.
+ * 3. v2 — FIXED 3D Line Support Discretisation. The previous approach sampled
+ *    points along P1->P2 and called domain.add_support_box() with a small
+ *    isotropic search-box radius at each sample. add_support_box() has no
+ *    real node-finding tolerance of its own (eps=1e-2mm, meant only to
+ *    absorb floating-point rounding) -- so capture depended entirely on that
+ *    worker-side radius being large enough on EVERY axis. On an anisotropic
+ *    mesh (e.g. the default Lx=6000 Ly=300 Lz=600, nx=36 ny=9 nz=12 -> dx
+ *    166.7mm, dy 33.3mm, dz 50mm), a radius sized off the mesh's finest
+ *    spacing (dy) is too small on the coarser axes (dx). Confirmed by direct
+ *    test: a line support placed more than ~12.5mm from an existing node row
+ *    on Y -- a ~21mm-wide gap out of every 33.3mm between rows -- captured
+ *    ZERO degrees of freedom, silently. Fixed by delegating to a new
+ *    domain.add_line_support(p1, p2, dofs) method (see domain.py) that snaps
+ *    each sample to its nearest node index per axis instead of testing
+ *    box containment -- the same proven approach add_point_load() already
+ *    uses. (Measured: for a single boundary line support, the new call is
+ *    about as fast as the old one -- this fix is about correctness, not
+ *    performance, since the old box-sampling's early per-axis rejection
+ *    was already fairly cheap for the boundary-aligned lines that happened
+ *    to be the only cases tested before.)
  */
 
 importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
@@ -161,29 +179,19 @@ for ps in payload.get("point_supports", []):
     domain.add_support_box([px - r, px + r], [py - r, py + r], [pz - r, pz + r], dofs=ps.get("dofs", "xyz"))
 
 # --- Discrete Line Supports Discretisation ---
+# FIX: delegate to domain.add_line_support(), which snaps each sampled
+# point along the line to its nearest node index per axis (dx, dy, dz
+# handled independently) instead of testing containment inside a small
+# search box. The old box-based approach here silently captured zero
+# nodes -- and therefore restrained nothing -- whenever a line support
+# was placed more than a few mm off an axis with coarse mesh spacing.
+# See domain.py's add_line_support() docstring and this file's header
+# comment for the confirmed failure case and reproduction numbers.
 line_supports = payload.get("line_supports", [])
 for ls in line_supports:
-    p1 = np.array([float(ls["x1"]), float(ls["y1"]), float(ls["z1"])])
-    p2 = np.array([float(ls["x2"]), float(ls["y2"]), float(ls["z2"])])
-    dofs = ls.get("dofs", "xyz")
-    
-    vec = p2 - p1
-    length = np.linalg.norm(vec)
-    if length > 1e-6:
-        # Sample points along the vector at sub-voxel resolution (half min-voxel step)
-        min_step = min(domain.dx, domain.dy, domain.dz) * 0.5
-        n_samples = max(2, int(np.ceil(length / min_step)))
-        t_steps = np.linspace(0.0, 1.0, n_samples)
-        
-        r = min_step * 0.75
-        for t in t_steps:
-            pt = p1 + t * vec
-            domain.add_support_box(
-                [pt[0] - r, pt[0] + r],
-                [pt[1] - r, pt[1] + r],
-                [pt[2] - r, pt[2] + r],
-                dofs=dofs
-            )
+    p1 = [float(ls["x1"]), float(ls["y1"]), float(ls["z1"])]
+    p2 = [float(ls["x2"]), float(ls["y2"]), float(ls["z2"])]
+    domain.add_line_support(p1, p2, dofs=ls.get("dofs", "xyz"))
 
 # --- Loading Conditions ---
 load_preset = payload.get("load_preset", "custom")
