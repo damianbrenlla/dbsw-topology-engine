@@ -1,5 +1,28 @@
 # DBSW 3D Spatial Domain Definition Engine
 # Author: Damian Brenlla / DBSW 2026
+# v2 — Added add_line_support(). Previously, 3D line supports were built in
+#      solver_worker.js by sampling points along the line and calling
+#      add_support_box() with a small isotropic search-box radius at each
+#      sample. add_support_box() has no real node-finding tolerance of its
+#      own (eps=1e-2mm, meant only to absorb floating-point rounding) — so
+#      whether a sample actually captured a node depended entirely on that
+#      worker-side radius being large enough on EVERY axis. For an
+#      anisotropic mesh (dx != dy != dz, which is the norm for a wall/beam
+#      domain like Lx=6000 Ly=300 Lz=600 with nx=36 ny=9 nz=12), a radius
+#      sized off the mesh's finest spacing is too small on the coarser axes.
+#      Confirmed by direct test: a line support placed at a Y coordinate
+#      more than ~12.5mm from an existing node row (a ~21mm-wide gap out of
+#      every 33.3mm between node rows, on the default domain) captured
+#      ZERO degrees of freedom — silently. The structure would then solve
+#      with less restraint than intended, or fail outright if that was the
+#      only support defined.
+#
+#      add_line_support() below sidesteps the box-radius problem entirely by
+#      reusing the same nearest-node INDEX ROUNDING already proven correct
+#      in add_point_load() (round(coord / spacing), clipped to the node
+#      range) rather than testing whether a node falls inside a small box.
+#      That guarantees exactly one node is captured per sample, on every
+#      axis, regardless of how anisotropic dx/dy/dz are.
 
 import numpy as np
 
@@ -95,6 +118,75 @@ class Domain3D:
                                 ey = min(iy, self.ny - 1)
                                 ez = min(iz, self.nz - 1)
                                 self.passive_mask[ex, ey, ez] = 1.0
+
+        self.fixed_dofs = list(set(self.fixed_dofs))
+
+    def add_line_support(self, p1_xyz, p2_xyz, dofs="xyz"):
+        """
+        Restrains DOFs for every mesh node lying along the 3D line segment
+        from p1_xyz to p2_xyz.
+
+        FIX (see module docstring): rather than testing whether nodes fall
+        inside a small search box around sample points along the line (which
+        silently captures nothing if the box is smaller than the local mesh
+        spacing on any axis -- a real, confirmed failure mode for
+        anisotropic meshes), this samples t along the line and snaps each
+        sample to its NEAREST node index per axis via
+        round(coord / spacing), exactly mirroring add_point_load()'s proven
+        approach. That guarantees a node is always captured on every axis,
+        independent of dx/dy/dz being unequal.
+
+        Args:
+            p1_xyz, p2_xyz: [x, y, z] endpoints of the support line, in mm.
+            dofs: string containing any of 'x', 'y', 'z' -- which
+                translational DOFs to restrain at each captured node.
+        """
+        p1 = np.array(p1_xyz, dtype=float)
+        p2 = np.array(p2_xyz, dtype=float)
+        vec = p2 - p1
+        length = float(np.linalg.norm(vec))
+
+        nodenrs = self._get_node_grid()
+
+        if length < 1e-6:
+            # Degenerate (zero-length) line -- treat as a single point.
+            candidates = [p1]
+        else:
+            # Sample finely enough that consecutive samples can never skip a
+            # node on whichever axis the line is changing fastest along.
+            # Using the mesh's FINEST spacing as the step is always safe
+            # (it can only ever over-sample, never under-sample, regardless
+            # of the line's direction) -- and because capture below is now
+            # index-based rather than box-based, redundant samples just
+            # resolve to the same node index and get deduplicated by the
+            # `seen_nodes` set. (This isn't necessarily faster than the old
+            # box-sampling for a single line in isolation -- the win here is
+            # correctness on anisotropic meshes, not raw speed.)
+            step = min(self.dx, self.dy, self.dz) * 0.5
+            n_samples = max(2, int(np.ceil(length / step)) + 1)
+            t_vals = np.linspace(0.0, 1.0, n_samples)
+            candidates = [p1 + t * vec for t in t_vals]
+
+        seen_nodes = set()
+        for pt in candidates:
+            ix = int(np.clip(round(pt[0] / self.dx), 0, self.nx))
+            iy = int(np.clip(round(pt[1] / self.dy), 0, self.ny))
+            iz = int(np.clip(round(pt[2] / self.dz), 0, self.nz))
+            seen_nodes.add((ix, iy, iz))
+
+        for ix, iy, iz in seen_nodes:
+            node = nodenrs[ix, iy, iz]
+            if "x" in dofs:
+                self.fixed_dofs.append(3 * node)
+            if "y" in dofs:
+                self.fixed_dofs.append(3 * node + 1)
+            if "z" in dofs:
+                self.fixed_dofs.append(3 * node + 2)
+
+            ex = min(ix, self.nx - 1)
+            ey = min(iy, self.ny - 1)
+            ez = min(iz, self.nz - 1)
+            self.passive_mask[ex, ey, ez] = 1.0
 
         self.fixed_dofs = list(set(self.fixed_dofs))
 
