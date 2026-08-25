@@ -155,7 +155,7 @@
         .data-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; margin-top: 4px; }
         .data-table th { text-align: left; background: #f5f5f5; padding: 4px 6px; border: 1px solid #e5e5e5; font-weight: 600; }
         .data-table td { padding: 2px; border: 1px solid #e5e5e5; }
-        .data-table input { width: 100%; border: none; padding: 4px; font-size: 0.72rem; font-family: monospace; min-width: 0; }
+        .data-table input { width: 100%; border: none; padding: 4px; font-size: 0.72rem; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; min-width: 0; }
         .btn-del { background: #ffffff; color: #cc0000; border: none; font-weight: bold; cursor: pointer; padding: 2px 6px; }
 
         #legend {
@@ -172,7 +172,7 @@
             background: linear-gradient(to top, hsl(240, 85%, 45%), hsl(180, 85%, 45%), hsl(120, 85%, 45%), hsl(60, 85%, 45%), hsl(0, 85%, 45%));
             border: 1px solid #999999;
         }
-        .legend-labels { display: flex; flex-direction: column; justify-content: space-between; height: 130px; font-family: monospace; font-size: 0.70rem; color: #333333; }
+        .legend-labels { display: flex; flex-direction: column; justify-content: space-between; height: 130px; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 0.70rem; color: #333333; }
 
         #intro-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.55);
@@ -299,18 +299,18 @@
     <div class="control-group">
         <label>Domain Geometry Lx, Ly, Lz (mm)</label>
         <div style="display: flex; gap: 6px;">
-            <input type="number" id="Lx" value="6000" style="width: 33%; font-family: monospace;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
-            <input type="number" id="Ly" value="300" style="width: 33%; font-family: monospace;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
-            <input type="number" id="Lz" value="600" style="width: 33%; font-family: monospace;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
+            <input type="number" id="Lx" value="6000" style="width: 33%;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
+            <input type="number" id="Ly" value="300" style="width: 33%;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
+            <input type="number" id="Lz" value="600" style="width: 33%;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
         </div>
     </div>
 
     <div class="control-group">
         <label>FE Mesh Divisions nx, ny, nz</label>
         <div style="display: flex; gap: 6px;">
-            <input type="number" id="nx" value="36" style="width: 33%; font-family: monospace;">
-            <input type="number" id="ny" value="9" style="width: 33%; font-family: monospace;">
-            <input type="number" id="nz" value="12" style="width: 33%; font-family: monospace;">
+            <input type="number" id="nx" value="36" style="width: 33%;">
+            <input type="number" id="ny" value="9" style="width: 33%;">
+            <input type="number" id="nz" value="12" style="width: 33%;">
         </div>
     </div>
 
@@ -339,22 +339,22 @@
         <div class="control-group">
             <label>Support Box X Bounds [Min, Max] (mm)</label>
             <div style="display: flex; gap: 6px;">
-                <input type="number" id="sup_x_min" value="0" style="width: 50%; font-family: monospace;" oninput="updateDomainVisuals()">
-                <input type="number" id="sup_x_max" value="0" style="width: 50%; font-family: monospace;" oninput="updateDomainVisuals()">
+                <input type="number" id="sup_x_min" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
+                <input type="number" id="sup_x_max" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
             </div>
         </div>
         <div class="control-group">
             <label>Support Box Y Bounds [Min, Max] (mm)</label>
             <div style="display: flex; gap: 6px;">
-                <input type="number" id="sup_y_min" value="0" style="width: 50%; font-family: monospace;" oninput="updateDomainVisuals()">
-                <input type="number" id="sup_y_max" value="300" style="width: 50%; font-family: monospace;" oninput="updateDomainVisuals()">
+                <input type="number" id="sup_y_min" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
+                <input type="number" id="sup_y_max" value="300" style="width: 50%;" oninput="updateDomainVisuals()">
             </div>
         </div>
         <div class="control-group">
             <label>Support Box Z Bounds [Min, Max] (mm)</label>
             <div style="display: flex; gap: 6px;">
-                <input type="number" id="sup_z_min" value="0" style="width: 50%; font-family: monospace;" oninput="updateDomainVisuals()">
-                <input type="number" id="sup_z_max" value="600" style="width: 50%; font-family: monospace;" oninput="updateDomainVisuals()">
+                <input type="number" id="sup_z_min" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
+                <input type="number" id="sup_z_max" value="600" style="width: 50%;" oninput="updateDomainVisuals()">
             </div>
         </div>
         <div class="checkbox-group">
@@ -379,7 +379,7 @@
         </table>
     </div>
 
-    <!-- NEW: Discrete Line Supports Generator Module (2 Points in 3D Space) -->
+    <!-- Discrete Line Supports Generator Module (2 Points in 3D Space) -->
     <div class="control-group" style="margin-top: 6px;">
         <div class="load-header-row">
             <label style="margin: 0;">Discrete Line Supports (2-Point Generator)</label>
@@ -460,8 +460,8 @@
     <div class="control-group">
         <label>Volume Fraction & Max Iterations</label>
         <div style="display: flex; gap: 6px;">
-            <input type="number" step="0.05" id="volfrac" value="0.90" min="0.05" max="1.00" style="width: 50%; font-family: monospace;">
-            <input type="number" id="iterations" value="20" style="width: 50%; font-family: monospace;">
+            <input type="number" step="0.05" id="volfrac" value="0.90" min="0.05" max="1.00" style="width: 50%;">
+            <input type="number" id="iterations" value="20" style="width: 50%;">
         </div>
         <p style="font-size: 0.70rem; color: #888888; line-height: 1.45; margin: 4px 0 0 0;">
             Volume fraction sets the target proportion of the domain kept as solid
@@ -499,14 +499,14 @@
             <div>
                 <div style="display: flex; justify-content: space-between; font-size: 0.70rem; margin-bottom: 2px;">
                     <span style="color: #0055cc; font-weight: 600;">Compression Limit (-MPa)</span>
-                    <span id="lbl_comp_val" style="font-family: monospace; font-weight: bold;">-0.01 MPa</span>
+                    <span id="lbl_comp_val" style="font-weight: bold;">-0.01 MPa</span>
                 </div>
                 <input type="range" id="stress_comp_slider" min="0.01" max="1" step="0.01" value="1" oninput="onStressSliderChange()">
             </div>
             <div>
                 <div style="display: flex; justify-content: space-between; font-size: 0.70rem; margin-bottom: 2px;">
                     <span style="color: #cc0000; font-weight: 600;">Tension Limit (+MPa)</span>
-                    <span id="lbl_tens_val" style="font-family: monospace; font-weight: bold;">+0.01 MPa</span>
+                    <span id="lbl_tens_val" style="font-weight: bold;">+0.01 MPa</span>
                 </div>
                 <input type="range" id="stress_tens_slider" min="0.01" max="1" step="0.01" value="1" oninput="onStressSliderChange()">
             </div>
@@ -849,7 +849,7 @@
         updateDomainVisuals();
     }
 
-    /* NEW: Add Discrete Line Support Row Generator */
+    /* Add Discrete Line Support Row Generator */
     function addLineSupportRow(x1, y1, z1, x2, y2, z2, dofs) {
         var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
         x1 = (x1 === undefined) ? 0 : x1; y1 = (y1 === undefined) ? 0 : y1; z1 = (z1 === undefined) ? 0 : z1;
@@ -943,20 +943,20 @@
             '<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;">' +
                 '<div><label style="font-size: 0.62rem; color: #666; display:block;">X [Min, Max]</label>' +
                     '<div style="display: flex; gap: 2px;">' +
-                        '<input type="number" class="vr-xmin" value="' + xMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-family: monospace; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
-                        '<input type="number" class="vr-xmax" value="' + xMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-family: monospace; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+                        '<input type="number" class="vr-xmin" value="' + xMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+                        '<input type="number" class="vr-xmax" value="' + xMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
                     '</div>' +
                 '</div>' +
                 '<div><label style="font-size: 0.62rem; color: #666; display:block;">Y [Min, Max]</label>' +
                     '<div style="display: flex; gap: 2px;">' +
-                        '<input type="number" class="vr-ymin" value="' + yMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-family: monospace; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
-                        '<input type="number" class="vr-ymax" value="' + yMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-family: monospace; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+                        '<input type="number" class="vr-ymin" value="' + yMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+                        '<input type="number" class="vr-ymax" value="' + yMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
                     '</div>' +
                 '</div>' +
                 '<div><label style="font-size: 0.62rem; color: #666; display:block;">Z [Min, Max]</label>' +
                     '<div style="display: flex; gap: 2px;">' +
-                        '<input type="number" class="vr-zmin" value="' + zMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-family: monospace; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
-                        '<input type="number" class="vr-zmax" value="' + zMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-family: monospace; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+                        '<input type="number" class="vr-zmin" value="' + zMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+                        '<input type="number" class="vr-zmax" value="' + zMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
                     '</div>' +
                 '</div>' +
             '</div>';
@@ -1051,7 +1051,7 @@
         return supports;
     }
 
-    /* NEW: Extract Line Support Table Data */
+    /* Extract Line Support Table Data */
     function getLineSupportArrayData() {
         var rows = document.querySelectorAll('#line_support_table_body tr');
         var lineSupports = [];
@@ -1175,7 +1175,7 @@
             supportGizmos.push(ptMesh);
         });
 
-        /* NEW: Render Discrete 3D Line Support Gizmos */
+        /* Render Discrete 3D Line Support Gizmos */
         var lineSups = getLineSupportArrayData();
         lineSups.forEach(function(ls) {
             var p1 = new THREE.Vector3(ls.x1, ls.z1, ls.y1);
@@ -1372,7 +1372,7 @@
             sup_z_max: parseFloat(document.getElementById('sup_z_max').value),
             sup_dofs: dofs,
             point_supports: getPointSupportArrayData(),
-            line_supports: getLineSupportArrayData(), // Dispatches Line Supports Array
+            line_supports: getLineSupportArrayData(),
             load_preset: document.getElementById('load_preset').value,
             loads: getLoadArrayData(),
             void_regions: getVoidRegionArrayData(),
