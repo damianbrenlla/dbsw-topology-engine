@@ -299,18 +299,18 @@
     <div class="control-group">
         <label>Domain Geometry Lx, Ly, Lz (mm)</label>
         <div style="display: flex; gap: 6px;">
-            <input type="number" id="Lx" value="6000" style="width: 33%;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
-            <input type="number" id="Ly" value="300" style="width: 33%;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
-            <input type="number" id="Lz" value="600" style="width: 33%;" onchange="updateDomainVisuals(); setupCutPlaneSliders();">
+            <input type="number" id="Lx" value="6000" min="1" style="width: 33%;" onchange="validatePositiveInputs(); updateDomainVisuals(); setupCutPlaneSliders();">
+            <input type="number" id="Ly" value="300" min="1" style="width: 33%;" onchange="validatePositiveInputs(); updateDomainVisuals(); setupCutPlaneSliders();">
+            <input type="number" id="Lz" value="600" min="1" style="width: 33%;" onchange="validatePositiveInputs(); updateDomainVisuals(); setupCutPlaneSliders();">
         </div>
     </div>
 
     <div class="control-group">
         <label>FE Mesh Divisions nx, ny, nz</label>
         <div style="display: flex; gap: 6px;">
-            <input type="number" id="nx" value="36" style="width: 33%;">
-            <input type="number" id="ny" value="9" style="width: 33%;">
-            <input type="number" id="nz" value="12" style="width: 33%;">
+            <input type="number" id="nx" value="36" min="1" style="width: 33%;" onchange="validatePositiveInputs();">
+            <input type="number" id="ny" value="9" min="1" style="width: 33%;" onchange="validatePositiveInputs();">
+            <input type="number" id="nz" value="12" min="1" style="width: 33%;" onchange="validatePositiveInputs();">
         </div>
     </div>
 
@@ -461,7 +461,7 @@
         <label>Volume Fraction & Max Iterations</label>
         <div style="display: flex; gap: 6px;">
             <input type="number" step="0.05" id="volfrac" value="0.90" min="0.05" max="1.00" style="width: 50%;">
-            <input type="number" id="iterations" value="20" style="width: 50%;">
+            <input type="number" id="iterations" value="20" min="1" style="width: 50%;">
         </div>
         <p style="font-size: 0.70rem; color: #888888; line-height: 1.45; margin: 4px 0 0 0;">
             Volume fraction sets the target proportion of the domain kept as solid
@@ -594,6 +594,21 @@
         "Sandstone (50 MPa)": { fb: 50.0, E: 20000.0 }, "Marble (120 MPa)": { fb: 120.0, E: 45000.0 }
     };
 
+    /* Strictly enforce absolute positive values on domain and mesh input fields */
+    function validatePositiveInputs() {
+        ['Lx', 'Ly', 'Lz', 'nx', 'ny', 'nz'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) {
+                var val = parseFloat(el.value);
+                if (isNaN(val) || val <= 0) {
+                    el.value = Math.abs(val) || (id.startsWith('n') ? 1 : 100);
+                } else {
+                    el.value = Math.abs(val);
+                }
+            }
+        });
+    }
+
     function setVoidGizmosVisible(visible) {
         voidRegionGizmos.forEach(function(g) { g.visible = visible; });
     }
@@ -679,9 +694,10 @@
     }
 
     function setupCutPlaneSliders() {
-        var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
-        var Ly = parseFloat(document.getElementById('Ly').value) || 300;
-        var Lz = parseFloat(document.getElementById('Lz').value) || 600;
+        validatePositiveInputs();
+        var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
+        var Ly = Math.abs(parseFloat(document.getElementById('Ly').value)) || 300;
+        var Lz = Math.abs(parseFloat(document.getElementById('Lz').value)) || 600;
         var sliderX = document.getElementById('cut_x');
         var sliderY = document.getElementById('cut_y');
         var sliderZ = document.getElementById('cut_z');
@@ -851,7 +867,7 @@
 
     /* Add Discrete Line Support Row Generator */
     function addLineSupportRow(x1, y1, z1, x2, y2, z2, dofs) {
-        var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
+        var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
         x1 = (x1 === undefined) ? 0 : x1; y1 = (y1 === undefined) ? 0 : y1; z1 = (z1 === undefined) ? 0 : z1;
         x2 = (x2 === undefined) ? Lx : x2; y2 = (y2 === undefined) ? 0 : y2; z2 = (z2 === undefined) ? 0 : z2;
         dofs = (dofs === undefined) ? 'xyz' : dofs;
@@ -915,9 +931,9 @@
 
     /* Redesigned Card-Based Void Region Management Functions */
     function addVoidRegionRow(xMin, xMax, yMin, yMax, zMin, zMax, regionType) {
-        var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
-        var Ly = parseFloat(document.getElementById('Ly').value) || 300;
-        var Lz = parseFloat(document.getElementById('Lz').value) || 600;
+        var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
+        var Ly = Math.abs(parseFloat(document.getElementById('Ly').value)) || 300;
+        var Lz = Math.abs(parseFloat(document.getElementById('Lz').value)) || 600;
 
         xMin = (xMin === undefined) ? Math.round(Lx * 0.4) : xMin;
         xMax = (xMax === undefined) ? Math.round(Lx * 0.6) : xMax;
@@ -996,9 +1012,9 @@
 
     function applyLoadPreset() {
         var preset = document.getElementById('load_preset').value;
-        var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
-        var Ly = parseFloat(document.getElementById('Ly').value) || 300;
-        var Lz = parseFloat(document.getElementById('Lz').value) || 600;
+        var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
+        var Ly = Math.abs(parseFloat(document.getElementById('Ly').value)) || 300;
+        var Lz = Math.abs(parseFloat(document.getElementById('Lz').value)) || 600;
         var tbody = document.getElementById('load_table_body');
 
         if (preset === 'top_udl') {
@@ -1070,10 +1086,11 @@
     }
 
     function updateDomainVisuals() {
-        var Lx = parseFloat(document.getElementById('Lx').value) || 6000;
-        var Ly = parseFloat(document.getElementById('Ly').value) || 300;
-        var Lz = parseFloat(document.getElementById('Lz').value) || 600;
-        var nz = parseInt(document.getElementById('nz').value) || 12;
+        validatePositiveInputs();
+        var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
+        var Ly = Math.abs(parseFloat(document.getElementById('Ly').value)) || 300;
+        var Lz = Math.abs(parseFloat(document.getElementById('Lz').value)) || 600;
+        var nz = Math.abs(parseInt(document.getElementById('nz').value)) || 12;
 
         if (domainBox) scene.remove(domainBox);
         var boxGeo = new THREE.BoxGeometry(Lx, Lz, Ly);
@@ -1331,6 +1348,7 @@
 
     function startOptimisation() {
         if (!engineReady) return;
+        validatePositiveInputs();
         var status = document.getElementById('status');
         status.style.color = "#000000";
         status.style.borderLeftColor = "#000000";
@@ -1355,12 +1373,12 @@
             custom_nu: parseFloat(document.getElementById('custom_nu').value) || 0.20,
             custom_fk: parseFloat(document.getElementById('custom_fk').value) || 30.0,
             custom_gamma_kn_m3: parseFloat(document.getElementById('custom_gamma').value) || 25.0,
-            Lx: parseFloat(document.getElementById('Lx').value),
-            Ly: parseFloat(document.getElementById('Ly').value),
-            Lz: parseFloat(document.getElementById('Lz').value),
-            nx: parseInt(document.getElementById('nx').value),
-            ny: parseInt(document.getElementById('ny').value),
-            nz: parseInt(document.getElementById('nz').value),
+            Lx: Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000,
+            Ly: Math.abs(parseFloat(document.getElementById('Ly').value)) || 300,
+            Lz: Math.abs(parseFloat(document.getElementById('Lz').value)) || 600,
+            nx: Math.abs(parseInt(document.getElementById('nx').value)) || 36,
+            ny: Math.abs(parseInt(document.getElementById('ny').value)) || 9,
+            nz: Math.abs(parseInt(document.getElementById('nz').value)) || 12,
             volfrac: parseFloat(document.getElementById('volfrac').value),
             support_mode: document.getElementById('support_mode').value,
             support_preset: document.getElementById('support_preset').value,
@@ -1376,7 +1394,7 @@
             load_preset: document.getElementById('load_preset').value,
             loads: getLoadArrayData(),
             void_regions: getVoidRegionArrayData(),
-            iterations: parseInt(document.getElementById('iterations').value),
+            iterations: Math.abs(parseInt(document.getElementById('iterations').value)) || 20,
             include_self_weight: document.getElementById('self_weight_toggle').checked
         };
 
