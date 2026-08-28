@@ -718,7 +718,7 @@
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0xffffff);
 
-        camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 100000);
+        camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 1000000);
         camera.position.set(7000, 3000, 4000);
 
         renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -739,7 +739,8 @@
         fillLight.position.set(-3000, -2000, -2000);
         scene.add(fillLight);
 
-        var grid = new THREE.GridHelper(20000, 200, 0x000000, 0xe0e0e0);
+        // Large finite grid (acts effectively infinite for typical domain sizes)
+        var grid = new THREE.GridHelper(500000, 500, 0x000000, 0xe0e0e0);
         grid.position.y = -1;
         scene.add(grid);
 
