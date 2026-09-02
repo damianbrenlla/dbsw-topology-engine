@@ -67,12 +67,93 @@
         }
 
         #sidebar {
-            width: 420px; background: #ffffff; padding: 24px;
-            border-right: 1px solid #e5e5e5; display: flex;
-            flex-direction: column; gap: 12px; overflow-y: auto; z-index: 10;
+            flex: 0 0 420px;
+            width: 420px;
+            min-width: 0;
+            background: #ffffff;
+            padding: 24px;
+            border-right: 1px solid #e5e5e5;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow-y: auto;
+            z-index: 10;
+            transition:
+                flex-basis 0.28s ease,
+                width 0.28s ease,
+                padding 0.28s ease,
+                border-color 0.28s ease;
         }
-        #viewport { flex: 1; position: relative; background: #ffffff; }
-        
+
+        body.sidebar-collapsed #sidebar {
+            flex-basis: 0;
+            width: 0;
+            padding-left: 0;
+            padding-right: 0;
+            border-right-color: transparent;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        body.sidebar-collapsed #sidebar > * {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.12s ease;
+        }
+
+        #viewport {
+            flex: 1;
+            min-width: 0;
+            position: relative;
+            background: #ffffff;
+        }
+
+        /* Minimalist three-line sidebar toggle */
+        #sidebar-toggle {
+            position: fixed;
+            top: 18px;
+            left: 18px;
+            width: 32px;
+            height: 28px;
+            padding: 4px;
+            margin: 0;
+            border: 0;
+            border-radius: 0;
+            background: #ffffff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            z-index: 1100;
+            box-shadow: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        #sidebar-toggle span {
+            display: block;
+            width: 24px;
+            height: 1px;
+            background: #000000;
+            flex: 0 0 1px;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+        }
+
+        #sidebar-toggle:hover span {
+            background: #333333;
+        }
+
+        #sidebar-toggle:focus-visible {
+            outline: 1px solid #000000;
+            outline-offset: 3px;
+        }
+
+        #sidebar > div:first-child {
+            padding-top: 32px;
+        }
+
         /* Brand Image Logo Styling */
         .brand-logo-img {
             height: 18px;
@@ -198,6 +279,18 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
+
+<button
+    id="sidebar-toggle"
+    type="button"
+    aria-label="Collapse control panel"
+    aria-expanded="true"
+    title="Collapse control panel"
+>
+    <span></span>
+    <span></span>
+    <span></span>
+</button>
 
 <div id="intro-overlay">
     <div id="intro-modal">
@@ -1605,6 +1698,43 @@
         link.download = 'DBSW_Topology_Mesh.stl';
         link.click();
     }
+
+    // ------------------------------------------------------------
+    // Sidebar collapse / expand
+    // ------------------------------------------------------------
+    function toggleSidebar() {
+        var collapsed = document.body.classList.toggle('sidebar-collapsed');
+        var toggle = document.getElementById('sidebar-toggle');
+
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', String(!collapsed));
+            toggle.setAttribute(
+                'aria-label',
+                collapsed ? 'Expand control panel' : 'Collapse control panel'
+            );
+            toggle.setAttribute(
+                'title',
+                collapsed ? 'Expand control panel' : 'Collapse control panel'
+            );
+        }
+
+        // Wait for the CSS width transition to finish, then update
+        // the Three.js renderer/camera to the new viewport dimensions.
+        window.setTimeout(function () {
+            if (typeof onWindowResize === 'function') {
+                onWindowResize();
+            }
+        }, 300);
+    }
+
+    function initialiseSidebarToggle() {
+        var toggle = document.getElementById('sidebar-toggle');
+        if (!toggle) return;
+
+        toggle.addEventListener('click', toggleSidebar);
+    }
+
+    initialiseSidebarToggle();
 
     initThree();
     initWasmEngine();
