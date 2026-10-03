@@ -1,1744 +1,1669 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
-    <!-- 1. SEO Primary Metadata -->
-    <title>3D SIMP Topology Optimisation Engine | WebAssembly FEA — DBSW</title>
-    <meta name="description" content="Browser-native 3D SIMP structural topology optimisation engine powered by Python and WebAssembly. Features Eurocode 2/3/5/6 material logic, non-linear continuum mechanics, and interactive 3D section cut-planes.">
-    <meta name="keywords" content="Structural Topology Optimisation, 3D SIMP FEA, WebAssembly Finite Element Analysis, Eurocode Structural Engineering, Low Carbon Structural Design, Strut and Tie Model Generator, DBSW Engineering">
-    <meta name="author" content="Damian Brenlla / DBSW">
-    <link rel="canonical" href="https://topology.dbsw.uk/" />
-
-    <!-- 2. Open Graph / Social Audit Metadata -->
-    <meta property="og:type" content="website">
-    <meta property="og:site_name" content="DBSW Engineering">
-    <meta property="og:title" content="DBSW 3D Topology Engine — Client-Side WASM FEA">
-    <meta property="og:description" content="Interactive first-principles 3D continuum mechanics & topology optimisation running entirely in the browser via Pyodide/Wasm. Eurocode compliant design exploration.">
-    <meta property="og:url" content="https://topology.dbsw.uk/">
-    <meta property="og:image" content="https://topology.dbsw.uk/assets/og-preview.jpg">
-
-    <!-- 3. Structured Data (JSON-LD) -->
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "DBSW 3D SIMP Topology Engine",
-      "operatingSystem": "WebBrowser",
-      "applicationCategory": "EngineeringApplication",
-      "offers": {
-        "@type": "Offer",
-        "price": "0.00",
-        "priceCurrency": "GBP"
-      },
-      "author": {
-        "@type": "Person",
-        "name": "Damian Brenlla",
-        "url": "https://dbsw.uk"
-      },
-      "description": "Client-side WebAssembly solver for 3D structural SIMP topology optimisation, compliance minimisation, and Eurocode stress recovery."
-    }
-    </script>
-
-    <style>
-        * { box-sizing: border-box; }
-        body {
-            margin: 0; padding: 0;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-            background: #ffffff; color: #000000;
-            display: flex; height: 100vh; overflow: hidden;
-            -webkit-font-smoothing: antialiased;
-        }
-        
-        /* DBSW Custom Minimalist Scrollbar Palette */
-        #sidebar::-webkit-scrollbar { width: 6px; }
-        #sidebar::-webkit-scrollbar-track { background: #ffffff; border-left: 1px solid #e5e5e5; }
-        #sidebar::-webkit-scrollbar-thumb { background: #000000; border-radius: 0px; }
-        #sidebar::-webkit-scrollbar-thumb:hover { background: #333333; }
-        #sidebar::-webkit-scrollbar-button:single-button {
-            background-color: #ffffff; display: block; border-style: solid; height: 10px; width: 6px;
-        }
-        #sidebar::-webkit-scrollbar-button:single-button:vertical:decrement {
-            border-width: 0 3px 5px 3px; border-color: transparent transparent #000000 transparent;
-        }
-        #sidebar::-webkit-scrollbar-button:single-button:vertical:increment {
-            border-width: 5px 3px 0 3px; border-color: #000000 transparent transparent transparent;
-        }
-
-        #sidebar {
-            flex: 0 0 420px;
-            width: 420px;
-            min-width: 0;
-            background: #ffffff;
-            padding: 24px;
-            border-right: 1px solid #e5e5e5;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            overflow-y: auto;
-            z-index: 10;
-            transition:
-                flex-basis 0.28s ease,
-                width 0.28s ease,
-                padding 0.28s ease,
-                border-color 0.28s ease;
-        }
-
-        body.sidebar-collapsed #sidebar {
-            flex-basis: 0;
-            width: 0;
-            padding-left: 0;
-            padding-right: 0;
-            border-right-color: transparent;
-            gap: 0;
-            overflow: hidden;
-        }
-
-        body.sidebar-collapsed #sidebar > * {
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.12s ease;
-        }
-
-        #viewport {
-            flex: 1;
-            min-width: 0;
-            position: relative;
-            background: #ffffff;
-        }
-
-        /* Minimalist three-line sidebar toggle */
-        #sidebar-toggle {
-            position: fixed;
-            top: 18px;
-            left: 18px;
-            width: 32px;
-            height: 28px;
-            padding: 4px;
-            margin: 0;
-            border: 0;
-            border-radius: 0;
-            background: #ffffff;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            gap: 5px;
-            cursor: pointer;
-            z-index: 1100;
-            box-shadow: none;
-            -webkit-appearance: none;
-            appearance: none;
-        }
-
-        #sidebar-toggle span {
-            display: block;
-            width: 24px;
-            height: 1px;
-            background: #000000;
-            flex: 0 0 1px;
-            transition: transform 0.2s ease, opacity 0.2s ease;
-        }
-
-        #sidebar-toggle:hover span {
-            background: #333333;
-        }
-
-        #sidebar-toggle:focus-visible {
-            outline: 1px solid #000000;
-            outline-offset: 3px;
-        }
-
-        #sidebar > div:first-child {
-            padding-top: 32px;
-        }
-
-        /* Brand Image Logo Styling */
-        .brand-logo-img {
-            height: 18px;
-            width: auto;
-            max-width: 100%;
-            display: block;
-            margin-bottom: 6px;
-            object-fit: contain;
-            object-position: left center;
-        }
-
-        .subtitle { font-size: 0.72rem; color: #666666; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; }
-        .control-group { display: flex; flex-direction: column; gap: 4px; }
-        label { font-size: 0.75rem; color: #444444; font-weight: 500; letter-spacing: 0.2px; }
-        input, select {
-            background: #ffffff; border: 1px solid #cccccc; color: #000000;
-            padding: 6px 8px; border-radius: 0px;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-            font-size: 0.78rem; outline: none; transition: border-color 0.15s ease;
-        }
-        input:focus, select:focus { border-color: #000000; }
-
-        input[type="range"] {
-            -webkit-appearance: none; width: 100%; height: 4px; background: #e5e5e5;
-            outline: none; margin: 6px 0; padding: 0; border: none;
-        }
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none; appearance: none; width: 14px; height: 14px;
-            background: #555555; cursor: pointer; border-radius: 0px; transition: background 0.15s ease;
-        }
-        input[type="range"]::-webkit-slider-thumb:hover { background: #000000; }
-        input[type="range"]::-moz-range-thumb {
-            width: 14px; height: 14px; background: #555555; cursor: pointer; border-radius: 0px; border: none;
-        }
-
-        .btn-primary {
-            background: #000000; color: #ffffff; border: 1px solid #000000;
-            padding: 12px; border-radius: 0px;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-            font-size: 0.82rem; font-weight: 600; letter-spacing: 0.5px;
-            text-transform: uppercase; cursor: pointer; transition: background 0.15s ease; margin-top: 4px;
-        }
-        .btn-primary:hover { background: #333333; }
-        .btn-primary:disabled { background: #999999; border-color: #999999; cursor: not-allowed; }
-        .btn-stop {
-            background: #ffffff; color: #cc0000; border: 1px solid #cc0000;
-            padding: 10px; border-radius: 0px;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-            font-size: 0.80rem; font-weight: 700; letter-spacing: 0.5px;
-            text-transform: uppercase; cursor: pointer; transition: all 0.15s ease; display: none; margin-top: 4px;
-        }
-        .btn-stop:hover { background: #cc0000; color: #ffffff; }
-        .btn-secondary {
-            background: #ffffff; color: #000000; border: 1px solid #000000;
-            padding: 8px; border-radius: 0px;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-            font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px;
-            text-transform: uppercase; cursor: pointer; transition: background 0.15s ease;
-        }
-        .btn-secondary:hover { background: #f5f5f5; }
-        .btn-secondary:disabled { color: #999999; border-color: #cccccc; cursor: not-allowed; }
-        .btn-secondary-danger {
-            background: #ffffff; color: #cc0000; border: 1px solid #cc0000;
-            padding: 8px; border-radius: 0px;
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-            font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px;
-            text-transform: uppercase; cursor: pointer; transition: background 0.15s ease;
-        }
-        .btn-secondary-danger:hover { background: #cc0000; color: #ffffff; }
-        .load-header-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-        .load-header-row .btn-group { display: flex; gap: 6px; }
-        #status { font-size: 0.78rem; color: #000000; font-weight: 500; word-break: break-word; padding: 8px; background: #f9f9f9; border-left: 2px solid #000000; white-space: pre-line; }
-        hr { border: 0; border-top: 1px solid #e5e5e5; margin: 2px 0; }
-        .section-header { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #000000; }
-        .checkbox-group { display: flex; gap: 12px; align-items: center; font-size: 0.78rem; }
-        .checkbox-group label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-        input[type="checkbox"] { accent-color: #000000; }
-        
-        /* Compact Data Tables */
-        .data-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; margin-top: 4px; }
-        .data-table th { text-align: left; background: #f5f5f5; padding: 4px 6px; border: 1px solid #e5e5e5; font-weight: 600; }
-        .data-table td { padding: 2px; border: 1px solid #e5e5e5; }
-        .data-table input { width: 100%; border: none; padding: 4px; font-size: 0.72rem; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; min-width: 0; }
-        .btn-del { background: #ffffff; color: #cc0000; border: none; font-weight: bold; cursor: pointer; padding: 2px 6px; }
-
-        #legend {
-            position: absolute; top: 20px; right: 20px;
-            background: rgba(255, 255, 255, 0.92); border: 1px solid #cccccc;
-            padding: 12px 14px; font-size: 0.72rem; display: none;
-            flex-direction: column; gap: 6px;
-            box-shadow: 0px 2px 8px rgba(0,0,0,0.06); z-index: 100; min-width: 190px;
-        }
-        #legend-title { font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; font-size: 0.70rem; color: #000000; margin-bottom: 2px; }
-        .legend-bar-container { display: flex; align-items: center; gap: 10px; }
-        #legend-bar {
-            width: 14px; height: 130px;
-            background: linear-gradient(to top, hsl(240, 85%, 45%), hsl(180, 85%, 45%), hsl(120, 85%, 45%), hsl(60, 85%, 45%), hsl(0, 85%, 45%));
-            border: 1px solid #999999;
-        }
-        .legend-labels { display: flex; flex-direction: column; justify-content: space-between; height: 130px; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 0.70rem; color: #333333; }
-
-        #intro-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.55);
-            display: flex; align-items: center; justify-content: center;
-            z-index: 1200;
-        }
-        #intro-modal {
-            background: #ffffff; border: 1px solid #000000;
-            max-width: 460px; width: 90%; padding: 28px 28px 22px 28px;
-            box-shadow: 0px 8px 24px rgba(0,0,0,0.25);
-        }
-        #intro-modal .subtitle { margin-bottom: 16px; }
-        #intro-modal p { font-size: 0.82rem; line-height: 1.5; color: #222222; margin: 0 0 14px 0; }
-        #intro-modal ul { margin: 0 0 16px 0; padding-left: 18px; }
-        #intro-modal li { font-size: 0.78rem; line-height: 1.55; color: #333333; margin-bottom: 3px; }
-        #intro-modal .author-line {
-            font-size: 0.72rem; color: #666666; letter-spacing: 0.3px;
-            border-top: 1px solid #e5e5e5; padding-top: 12px; margin-bottom: 16px;
-        }
-        #intro-modal .author-line a { color: #000000; }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D SIMP Topology Optimisation Engine | WebAssembly FEA — DBSW</title>
+<meta name="description" content="Browser-native 3D SIMP structural topology optimisation engine powered by Python and WebAssembly. Features Eurocode 2/3/5/6 material logic, non-linear continuum mechanics, and interactive 3D section cut-planes.">
+<meta name="keywords" content="Structural Topology Optimisation, 3D SIMP FEA, WebAssembly Finite Element Analysis, Eurocode Structural Engineering, Low Carbon Structural Design, Strut and Tie Model Generator, DBSW Engineering">
+<meta name="author" content="Damian Brenlla / DBSW">
+<link rel="canonical" href="https://topology.dbsw.uk/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="DBSW Engineering">
+<meta property="og:title" content="DBSW 3D Topology Engine — Client-Side WASM FEA">
+<meta property="og:description" content="Interactive first-principles 3D continuum mechanics & topology optimisation running entirely in the browser via Pyodide/Wasm. Eurocode compliant design exploration.">
+<meta property="og:url" content="https://topology.dbsw.uk/">
+<meta property="og:image" content="https://topology.dbsw.uk/assets/og-preview.jpg">
+<script type="application/ld+json">
+{
+"@context": "https://schema.org",
+"@type": "SoftwareApplication",
+"name": "DBSW 3D SIMP Topology Engine",
+"operatingSystem": "WebBrowser",
+"applicationCategory": "EngineeringApplication",
+"offers": {
+"@type": "Offer",
+"price": "0.00",
+"priceCurrency": "GBP"
+},
+"author": {
+"@type": "Person",
+"name": "Damian Brenlla",
+"url": "https://dbsw.uk"
+},
+"description": "Client-side WebAssembly solver for 3D structural SIMP topology optimisation, compliance minimisation, and Eurocode stress recovery."
+}
+</script>
+<style>
+* { box-sizing: border-box; }
+body {
+margin: 0; padding: 0;
+font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+background: #ffffff; color: #000000;
+display: flex; height: 100vh; overflow: hidden;
+-webkit-font-smoothing: antialiased;
+}
+#sidebar::-webkit-scrollbar { width: 6px; }
+#sidebar::-webkit-scrollbar-track { background: #ffffff; border-left: 1px solid #e5e5e5; }
+#sidebar::-webkit-scrollbar-thumb { background: #000000; border-radius: 0px; }
+#sidebar::-webkit-scrollbar-thumb:hover { background: #333333; }
+#sidebar::-webkit-scrollbar-button:single-button {
+background-color: #ffffff; display: block; border-style: solid; height: 10px; width: 6px;
+}
+#sidebar::-webkit-scrollbar-button:single-button:vertical:decrement {
+border-width: 0 3px 5px 3px; border-color: transparent transparent #000000 transparent;
+}
+#sidebar::-webkit-scrollbar-button:single-button:vertical:increment {
+border-width: 5px 3px 0 3px; border-color: #000000 transparent transparent transparent;
+}
+#sidebar {
+flex: 0 0 420px;
+width: 420px;
+min-width: 0;
+background: #ffffff;
+padding: 24px;
+border-right: 1px solid #e5e5e5;
+display: flex;
+flex-direction: column;
+gap: 12px;
+overflow-y: auto;
+z-index: 10;
+transition: flex-basis 0.28s ease, width 0.28s ease, padding 0.28s ease, border-color 0.28s ease;
+}
+body.sidebar-collapsed #sidebar {
+flex-basis: 0;
+width: 0;
+padding-left: 0;
+padding-right: 0;
+border-right-color: transparent;
+gap: 0;
+overflow: hidden;
+}
+body.sidebar-collapsed #sidebar > * {
+opacity: 0;
+pointer-events: none;
+transition: opacity 0.12s ease;
+}
+#viewport {
+flex: 1;
+min-width: 0;
+position: relative;
+background: #ffffff;
+}
+#sidebar-toggle {
+position: fixed;
+top: 18px;
+left: 18px;
+width: 32px;
+height: 28px;
+padding: 4px;
+margin: 0;
+border: 0;
+border-radius: 0;
+background: #ffffff;
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: center;
+gap: 5px;
+cursor: pointer;
+z-index: 1100;
+box-shadow: none;
+-webkit-appearance: none;
+appearance: none;
+}
+#sidebar-toggle span {
+display: block;
+width: 24px;
+height: 1px;
+background: #000000;
+flex: 0 0 1px;
+transition: transform 0.2s ease, opacity 0.2s ease;
+}
+#sidebar-toggle:hover span { background: #333333; }
+#sidebar-toggle:focus-visible {
+outline: 1px solid #000000;
+outline-offset: 3px;
+}
+#sidebar > div:first-child { padding-top: 32px; }
+.brand-logo-img {
+height: 18px;
+width: auto;
+max-width: 100%;
+display: block;
+margin-bottom: 6px;
+object-fit: contain;
+object-position: left center;
+}
+.subtitle { font-size: 0.72rem; color: #666666; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; }
+.control-group { display: flex; flex-direction: column; gap: 4px; }
+label { font-size: 0.75rem; color: #444444; font-weight: 500; letter-spacing: 0.2px; }
+input, select {
+background: #ffffff; border: 1px solid #cccccc; color: #000000;
+padding: 6px 8px; border-radius: 0px;
+font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 0.78rem; outline: none; transition: border-color 0.15s ease;
+}
+input:focus, select:focus { border-color: #000000; }
+input[type="range"] {
+-webkit-appearance: none; width: 100%; height: 4px; background: #e5e5e5;
+outline: none; margin: 6px 0; padding: 0; border: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+-webkit-appearance: none; appearance: none; width: 14px; height: 14px;
+background: #555555; cursor: pointer; border-radius: 0px; transition: background 0.15s ease;
+}
+input[type="range"]::-webkit-slider-thumb:hover { background: #000000; }
+input[type="range"]::-moz-range-thumb {
+width: 14px; height: 14px; background: #555555; cursor: pointer; border-radius: 0px; border: none;
+}
+.btn-primary {
+background: #000000; color: #ffffff; border: 1px solid #000000;
+padding: 12px; border-radius: 0px;
+font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 0.82rem; font-weight: 600; letter-spacing: 0.5px;
+text-transform: uppercase; cursor: pointer; transition: background 0.15s ease; margin-top: 4px;
+}
+.btn-primary:hover { background: #333333; }
+.btn-primary:disabled { background: #999999; border-color: #999999; cursor: not-allowed; }
+.btn-stop {
+background: #ffffff; color: #cc0000; border: 1px solid #cc0000;
+padding: 10px; border-radius: 0px;
+font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 0.80rem; font-weight: 700; letter-spacing: 0.5px;
+text-transform: uppercase; cursor: pointer; transition: all 0.15s ease; display: none; margin-top: 4px;
+}
+.btn-stop:hover { background: #cc0000; color: #ffffff; }
+.btn-secondary {
+background: #ffffff; color: #000000; border: 1px solid #000000;
+padding: 8px; border-radius: 0px;
+font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px;
+text-transform: uppercase; cursor: pointer; transition: background 0.15s ease;
+}
+.btn-secondary:hover { background: #f5f5f5; }
+.btn-secondary:disabled { color: #999999; border-color: #cccccc; cursor: not-allowed; }
+.btn-secondary-danger {
+background: #ffffff; color: #cc0000; border: 1px solid #cc0000;
+padding: 8px; border-radius: 0px;
+font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px;
+text-transform: uppercase; cursor: pointer; transition: background 0.15s ease;
+}
+.btn-secondary-danger:hover { background: #cc0000; color: #ffffff; }
+.load-header-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.load-header-row .btn-group { display: flex; gap: 6px; }
+#status { font-size: 0.78rem; color: #000000; font-weight: 500; word-break: break-word; padding: 8px; background: #f9f9f9; border-left: 2px solid #000000; white-space: pre-line; }
+hr { border: 0; border-top: 1px solid #e5e5e5; margin: 2px 0; }
+.section-header { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #000000; }
+.checkbox-group { display: flex; gap: 12px; align-items: center; font-size: 0.78rem; }
+.checkbox-group label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+input[type="checkbox"] { accent-color: #000000; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; margin-top: 4px; }
+.data-table th { text-align: left; background: #f5f5f5; padding: 4px 6px; border: 1px solid #e5e5e5; font-weight: 600; }
+.data-table td { padding: 2px; border: 1px solid #e5e5e5; }
+.data-table input { width: 100%; border: none; padding: 4px; font-size: 0.72rem; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; min-width: 0; }
+.btn-del { background: #ffffff; color: #cc0000; border: none; font-weight: bold; cursor: pointer; padding: 2px 6px; }
+#legend {
+position: absolute; top: 20px; right: 20px;
+background: rgba(255, 255, 255, 0.92); border: 1px solid #cccccc;
+padding: 12px 14px; font-size: 0.72rem; display: none;
+flex-direction: column; gap: 6px;
+box-shadow: 0px 2px 8px rgba(0,0,0,0.06); z-index: 100; min-width: 190px;
+}
+#legend-title { font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; font-size: 0.70rem; color: #000000; margin-bottom: 2px; }
+.legend-bar-container { display: flex; align-items: center; gap: 10px; }
+#legend-bar {
+width: 14px; height: 130px;
+background: linear-gradient(to top, hsl(240, 85%, 45%), hsl(180, 85%, 45%), hsl(120, 85%, 45%), hsl(60, 85%, 45%), hsl(0, 85%, 45%));
+border: 1px solid #999999;
+}
+.legend-labels { display: flex; flex-direction: column; justify-content: space-between; height: 130px; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 0.70rem; color: #333333; }
+#intro-overlay {
+position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+display: flex; align-items: center; justify-content: center;
+z-index: 1200;
+}
+#intro-modal {
+background: #ffffff; border: 1px solid #000000;
+max-width: 460px; width: 90%; padding: 28px 28px 22px 28px;
+box-shadow: 0px 8px 24px rgba(0,0,0,0.25);
+}
+#intro-modal .subtitle { margin-bottom: 16px; }
+#intro-modal p { font-size: 0.82rem; line-height: 1.5; color: #222222; margin: 0 0 14px 0; }
+#intro-modal ul { margin: 0 0 16px 0; padding-left: 18px; }
+#intro-modal li { font-size: 0.78rem; line-height: 1.55; color: #333333; margin-bottom: 3px; }
+#intro-modal .author-line {
+font-size: 0.72rem; color: #666666; letter-spacing: 0.3px;
+border-top: 1px solid #e5e5e5; padding-top: 12px; margin-bottom: 16px;
+}
+#intro-modal .author-line a { color: #000000; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
-
-<button
-    id="sidebar-toggle"
-    type="button"
-    aria-label="Collapse control panel"
-    aria-expanded="true"
-    title="Collapse control panel"
->
-    <span></span>
-    <span></span>
-    <span></span>
+<button id="sidebar-toggle" type="button" aria-label="Collapse control panel" aria-expanded="true" title="Collapse control panel">
+<span></span><span></span><span></span>
 </button>
-
 <div id="intro-overlay">
-    <div id="intro-modal">
-        <!-- Logo Graphic Image -->
-        <img src="assets/Logo.jpg" alt="DBSW Engineering" class="brand-logo-img">
-        <div class="subtitle">3D SIMP Topology Engine — Client-Side WASM</div>
-
-        <p>
-            This tool generates 3D structural topology-optimised geometry using the
-            SIMP (Solid Isotropic Material with Penalisation) method, solved entirely
-            in your browser via WebAssembly — no data leaves your machine.
-        </p>
-
-        <ul>
-            <li>Six material classes (steel, concrete, timber, masonry, stone, custom isotropic)</li>
-            <li>Configurable domain geometry, FE mesh, supports and point/patch loads</li>
-            <li>Void keep-out and forced-solid passive regions to constrain the optimiser directly</li>
-            <li>Optional self-weight (dead load) inclusion</li>
-            <li>Stress (tension/compression) and displacement map visualisation with interactive section cut-planes</li>
-            <li>Direct .STL export of the optimised geometry</li>
-        </ul>
-
-        <p style="font-size: 0.72rem; color: #888888; margin-bottom: 0;">
-            This is a concept-stage design exploration tool, not a substitute for
-            code-compliant structural verification of the final geometry.
-        </p>
-
-        <div class="author-line" style="margin-top: 14px;">
-            Author: Damian Brenlla — <a href="https://dbsw.uk" target="_blank" rel="noopener">dbsw.uk</a>
-        </div>
-
-        <button class="btn-primary" style="margin-top: 0;" onclick="document.getElementById('intro-overlay').style.display='none';">
-            Enter Application
-        </button>
-    </div>
+<div id="intro-modal">
+<img src="assets/Logo.jpg" alt="DBSW Engineering" class="brand-logo-img">
+<div class="subtitle">3D SIMP Topology Engine — Client-Side WASM</div>
+<p>
+This tool generates 3D structural topology-optimised geometry using the
+SIMP (Solid Isotropic Material with Penalisation) method, solved entirely
+in your browser via WebAssembly — no data leaves your machine.
+</p>
+<ul>
+<li>Six material classes (steel, concrete, timber, masonry, stone, custom isotropic)</li>
+<li>Configurable domain geometry, FE mesh, supports and point/patch loads</li>
+<li>Void keep-out and forced-solid passive regions to constrain the optimiser directly</li>
+<li>Optional self-weight (dead load) inclusion</li>
+<li>Stress (tension/compression) and displacement map visualisation with interactive section cut-planes</li>
+<li>Direct .STL export of the optimised geometry</li>
+</ul>
+<p style="font-size: 0.72rem; color: #888888; margin-bottom: 0;">
+This is a concept-stage design exploration tool, not a substitute for
+code-compliant structural verification of the final geometry.
+</p>
+<div class="author-line" style="margin-top: 14px;">
+Author: Damian Brenlla — <a href="https://dbsw.uk" target="_blank" rel="noopener">dbsw.uk</a>
 </div>
-
+<button class="btn-primary" style="margin-top: 0;" onclick="document.getElementById('intro-overlay').style.display='none';">
+Enter Application
+</button>
+</div>
+</div>
 <div id="sidebar">
-    <div>
-        <!-- Logo Graphic Image -->
-        <img src="assets/Logo.jpg" alt="DBSW Engineering" class="brand-logo-img">
-        <div class="subtitle">3D SIMP Topology Engine — Client-Side WASM</div>
-    </div>
-
-    <div class="control-group">
-        <label>Structural Material Classification</label>
-        <select id="mat_type" onchange="updateMaterialUI()">
-            <option value="concrete" selected>Reinforced Concrete — BS EN 1992-1-1 (EC2)</option>
-            <option value="steel">Structural Steel — BS EN 1993-1-1 (EC3)</option>
-            <option value="timber">Timber / Glulam — BS EN 1995-1-1 (EC5)</option>
-            <option value="masonry">Structural Masonry — BS EN 1996-1-1 (EC6)</option>
-            <option value="stone">Natural Stone Masonry — BS EN 1996-1-1 (EC6)</option>
-            <option value="generic">Custom / Generic Isotropic Material</option>
-        </select>
-    </div>
-
-    <div id="mat_standard_div" class="control-group">
-        <label>Standard Material Grade</label>
-        <select id="mat_grade"></select>
-    </div>
-
-    <div id="mat_masonry_div" style="display: none; flex-direction: column; gap: 6px;">
-        <div class="control-group">
-            <label>Masonry Unit / Stone Characteristic Strength (fb)</label>
-            <select id="masonry_unit_select" onchange="syncCustomFb()"></select>
-            <input type="number" id="masonry_unit_fb" value="20" placeholder="Custom fb (MPa)" style="margin-top:2px;">
-        </div>
-        <div class="control-group">
-            <label>Mortar Strength Class (fm)</label>
-            <select id="mortar_select" onchange="syncCustomFm()"></select>
-            <input type="number" id="mortar_fm" value="6" placeholder="Custom fm (MPa)" style="margin-top:2px;">
-        </div>
-    </div>
-
-    <div id="mat_stone_extra_div" class="control-group" style="display: none;">
-        <label>Natural Stone Modulus of Elasticity E (MPa)</label>
-        <input type="number" id="stone_E" value="35000">
-    </div>
-
-    <div id="mat_generic_div" style="display: none; flex-direction: column; gap: 6px;">
-        <div class="control-group">
-            <label>Young's Modulus E (MPa)</label>
-            <input type="number" id="custom_E" value="33000">
-        </div>
-        <div class="control-group">
-            <label>Poisson's Ratio ν</label>
-            <input type="number" step="0.01" id="custom_nu" value="0.20">
-        </div>
-        <div class="control-group">
-            <label>Characteristic Design Yield Strength fk (MPa)</label>
-            <input type="number" id="custom_fk" value="30">
-        </div>
-        <div class="control-group">
-            <label>Unit Weight γ (kN/m³) — 0 disables self-weight</label>
-            <input type="number" step="0.1" id="custom_gamma" value="25.0">
-        </div>
-    </div>
-
-    <div class="control-group">
-        <label>Domain Geometry Lx, Ly, Lz (mm)</label>
-        <div style="display: flex; gap: 6px;">
-            <input type="number" id="Lx" value="6000" min="1" style="width: 33%;" onchange="validatePositiveInputs(); updateDomainVisuals(); setupCutPlaneSliders();">
-            <input type="number" id="Ly" value="300" min="1" style="width: 33%;" onchange="validatePositiveInputs(); updateDomainVisuals(); setupCutPlaneSliders();">
-            <input type="number" id="Lz" value="600" min="1" style="width: 33%;" onchange="validatePositiveInputs(); updateDomainVisuals(); setupCutPlaneSliders();">
-        </div>
-    </div>
-
-    <div class="control-group">
-        <label>FE Mesh Divisions nx, ny, nz</label>
-        <div style="display: flex; gap: 6px;">
-            <input type="number" id="nx" value="36" min="1" style="width: 33%;" onchange="validatePositiveInputs();">
-            <input type="number" id="ny" value="9" min="1" style="width: 33%;" onchange="validatePositiveInputs();">
-            <input type="number" id="nz" value="12" min="1" style="width: 33%;" onchange="validatePositiveInputs();">
-        </div>
-    </div>
-
-    <hr>
-    <div class="section-header">Boundary Restraints</div>
-
-    <div class="control-group">
-        <label>Support Mode</label>
-        <select id="support_mode" onchange="toggleSupportMode()">
-            <option value="preset">Preset Configurations</option>
-            <option value="custom">Arbitrary Spatial Bounding Box</option>
-            <option value="points_only">Only User-Selected Discrete Points/Lines</option>
-        </select>
-    </div>
-
-    <div id="preset_supports_div" class="control-group">
-        <label>Support Presets</label>
-        <select id="support_preset" onchange="updateDomainVisuals()">
-            <option value="cantilever">Cantilever Wall (X = 0 mm, Fixed Face)</option>
-            <option value="four_corners">Four Corners</option>
-            <option value="all_edges">All Bottom Edges Supported (Slab on Perimeter)</option>
-        </select>
-    </div>
-
-    <div id="custom_supports_div" style="display: none; flex-direction: column; gap: 6px;">
-        <div class="control-group">
-            <label>Support Box X Bounds [Min, Max] (mm)</label>
-            <div style="display: flex; gap: 6px;">
-                <input type="number" id="sup_x_min" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
-                <input type="number" id="sup_x_max" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
-            </div>
-        </div>
-        <div class="control-group">
-            <label>Support Box Y Bounds [Min, Max] (mm)</label>
-            <div style="display: flex; gap: 6px;">
-                <input type="number" id="sup_y_min" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
-                <input type="number" id="sup_y_max" value="300" style="width: 50%;" oninput="updateDomainVisuals()">
-            </div>
-        </div>
-        <div class="control-group">
-            <label>Support Box Z Bounds [Min, Max] (mm)</label>
-            <div style="display: flex; gap: 6px;">
-                <input type="number" id="sup_z_min" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
-                <input type="number" id="sup_z_max" value="600" style="width: 50%;" oninput="updateDomainVisuals()">
-            </div>
-        </div>
-        <div class="checkbox-group">
-            <label><input type="checkbox" id="dof_x" checked> Restrain Ux</label>
-            <label><input type="checkbox" id="dof_y" checked> Restrain Uy</label>
-            <label><input type="checkbox" id="dof_z" checked> Restrain Uz</label>
-        </div>
-    </div>
-
-    <!-- Discrete Point Supports Generator Module -->
-    <div class="control-group" style="margin-top: 4px;">
-        <div class="load-header-row">
-            <label style="margin: 0;">Discrete Point Supports (mm / DOFs)</label>
-            <div class="btn-group">
-                <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addSupportRow()">+ Add Support Node</button>
-                <button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllSupports()">Clear Point Supports</button>
-            </div>
-        </div>
-        <table class="data-table">
-            <thead><tr><th>X</th><th>Y</th><th>Z</th><th>DOFs</th><th></th></tr></thead>
-            <tbody id="support_table_body"></tbody>
-        </table>
-    </div>
-
-    <!-- Discrete Line Supports Generator Module (2 Points in 3D Space) -->
-    <div class="control-group" style="margin-top: 6px;">
-        <div class="load-header-row">
-            <label style="margin: 0;">Discrete Line Supports (2-Point Generator)</label>
-            <div class="btn-group">
-                <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addLineSupportRow()">+ Add Line Support</button>
-                <button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllLineSupports()">Clear Line Supports</button>
-            </div>
-        </div>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>X1</th><th>Y1</th><th>Z1</th>
-                    <th>X2</th><th>Y2</th><th>Z2</th>
-                    <th>DOFs</th><th></th>
-                </tr>
-            </thead>
-            <tbody id="line_support_table_body"></tbody>
-        </table>
-        <p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 4px 0 0 0;">
-            With Support Mode set to "Only User-Selected Discrete Points/Lines"
-            above, these tables define the <em>only</em> boundary restraints. Line supports generate nodal restraint chains along the 3D vector. Make sure enough DOFs are locked across nodes to prevent rigid-body motion.
-        </p>
-    </div>
-
-    <hr>
-    <div class="section-header">Loading Definition</div>
-
-    <div class="control-group">
-        <label>Load Presets</label>
-        <select id="load_preset" onchange="applyLoadPreset()">
-            <option value="top_udl">Top Surface Uniform Patch Load</option>
-            <option value="custom">Custom Point Load Array</option>
-            <option value="tip_center">Single Center Point Load (X = Lx/2)</option>
-            <option value="third_points">Third-Point Flexure Loads (X = Lx/3, 2Lx/3)</option>
-        </select>
-    </div>
-
-    <div id="point_loads_container" class="control-group">
-        <div class="load-header-row">
-            <label style="margin: 0;">Point Load Array (mm / kN)</label>
-            <div class="btn-group">
-                <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addLoadRow()">+ Add Load</button>
-                <button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllLoads()">Clear All Loads</button>
-            </div>
-        </div>
-        <table class="data-table">
-            <thead><tr><th>X</th><th>Y</th><th>Z</th><th>Fx</th><th>Fy</th><th>Fz</th><th></th></tr></thead>
-            <tbody id="load_table_body"></tbody>
-        </table>
-        <p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 4px 0 0 0;">
-            An empty table means zero external load. If self-weight is also
-            switched off below, the solver correctly returns a flat,
-            zero-stress result — that's the expected physical answer for an
-            unloaded body, not a bug.
-        </p>
-    </div>
-
-    <hr>
-    <div class="section-header">Void / Passive Material Regions</div>
-    <div id="void_regions_container" class="control-group">
-        <div class="load-header-row">
-            <label style="margin: 0;">Keep-Out / Forced-Solid Boxes (mm)</label>
-            <div class="btn-group">
-                <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addVoidRegionRow()">+ Add Region</button>
-                <button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllVoidRegions()">Clear All</button>
-            </div>
-        </div>
-        
-        <!-- Redesigned Compact Grid Card Container -->
-        <div id="void_region_list" style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;"></div>
-
-        <p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 6px 0 0 0;">
-            "Void" forces elements inside the box to stay empty regardless of what the optimiser would otherwise choose — useful for service penetrations, ducts, or doorways. "Forced Solid" pins material in place instead — useful for bearing pads or fixing zones. Overlapping a region with a load/support point produces an invalid model, so keep regions clear of load/support coordinates.
-        </p>
-    </div>
-
-    <hr>
-    <div class="control-group">
-        <label>Volume Fraction & Max Iterations</label>
-        <div style="display: flex; gap: 6px;">
-            <input type="number" step="0.05" id="volfrac" value="0.90" min="0.05" max="1.00" style="width: 50%;">
-            <input type="number" id="iterations" value="20" min="1" style="width: 50%;">
-        </div>
-        <p style="font-size: 0.70rem; color: #888888; line-height: 1.45; margin: 4px 0 0 0;">
-            Volume fraction sets the target proportion of the domain kept as solid
-            material (0.90 = 90% by volume). Iterations sets how many SIMP
-            optimisation passes run — more iterations generally converge to a
-            cleaner, more resolved topology at the cost of longer solve time.
-        </p>
-    </div>
-    <div class="checkbox-group" style="margin-top: 2px;">
-        <label>
-            <input type="checkbox" id="self_weight_toggle" checked>
-            Include Self-Weight (Dead Load)
-        </label>
-    </div>
-
-    <hr>
-    <div class="section-header">Visualization Render Mode</div>
-    <div class="control-group">
-        <select id="render_mode" onchange="toggleRenderModeUI(); reRenderMesh();">
-            <option value="ec3_stress">Stress Map (+Tension / -Compression)</option>
-            <option value="grey">Monochrome Studio Grey (50%)</option>
-            <option value="deflection">Displacement Map (Deflection mm)</option>
-        </select>
-    </div>
-
-    <!-- Analog Stress Limit Faders (Visible in ec3_stress mode) -->
-    <div id="stress_thresholds_div" class="control-group" style="margin-top: 4px; display: none;">
-        <label style="font-weight: 700; text-transform: uppercase; font-size: 0.70rem; letter-spacing: 0.5px;">
-            Interactive Stress Palette Faders
-        </label>
-        <p style="font-size: 0.68rem; color: #888888; margin: 0 0 4px 0; line-height: 1.3;">
-            Adjust limits between 0.01 MPa and calculated peaks. Elements outside range render in Studio Grey.
-        </p>
-        <div style="display: flex; flex-direction: column; gap: 8px; background: #f9f9f9; padding: 8px; border: 1px solid #e5e5e5;">
-            <div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.70rem; margin-bottom: 2px;">
-                    <span style="color: #0055cc; font-weight: 600;">Compression Limit (-MPa)</span>
-                    <span id="lbl_comp_val" style="font-weight: bold;">-0.01 MPa</span>
-                </div>
-                <input type="range" id="stress_comp_slider" min="0.01" max="1" step="0.01" value="1" oninput="onStressSliderChange()">
-            </div>
-            <div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.70rem; margin-bottom: 2px;">
-                    <span style="color: #cc0000; font-weight: 600;">Tension Limit (+MPa)</span>
-                    <span id="lbl_tens_val" style="font-weight: bold;">+0.01 MPa</span>
-                </div>
-                <input type="range" id="stress_tens_slider" min="0.01" max="1" step="0.01" value="1" oninput="onStressSliderChange()">
-            </div>
-        </div>
-    </div>
-
-    <hr>
-    <div class="section-header">Interactive 3D Section Cut-Planes</div>
-    <div class="control-group">
-        <label>Cut Plane X Position (Longitudinal Cut)</label>
-        <input type="range" id="cut_x" min="0" max="6000" step="10" value="6000" oninput="updateCutPlanes()">
-    </div>
-    <div class="control-group">
-        <label>Cut Plane Y Position (Cross-Section Cut)</label>
-        <input type="range" id="cut_y" min="0" max="300" step="5" value="300" oninput="updateCutPlanes()">
-    </div>
-    <div class="control-group">
-        <label>Cut Plane Z Position (Height Cut)</label>
-        <input type="range" id="cut_z" min="0" max="600" step="5" value="600" oninput="updateCutPlanes()">
-    </div>
-
-    <button id="btn-exec" class="btn-primary" onclick="startOptimisation()" disabled>Loading Wasm Engine…</button>
-    <button id="btn-stop" class="btn-stop" onclick="stopOptimisation()">■ Stop / Reset Engine</button>
-    
-    <!-- Results Actions Group: Hidden by default until solve completes -->
-    <div id="results-actions-group" style="display: none; gap: 6px; margin-top: 4px;">
-        <button id="btn-export" class="btn-secondary" style="flex: 1;" onclick="exportSTL()">Export .STL Geometry</button>
-        <button id="btn-clear" class="btn-secondary-danger" style="flex: 1;" onclick="clearResults()">Clear Results</button>
-    </div>
-
-    <div id="status">Initialising WebAssembly Python runtime…</div>
+<div>
+<img src="assets/Logo.jpg" alt="DBSW Engineering" class="brand-logo-img">
+<div class="subtitle">3D SIMP Topology Engine — Client-Side WASM</div>
 </div>
-
+<div class="control-group">
+<label>Structural Material Classification</label>
+<select id="mat_type" onchange="updateMaterialUI()">
+<option value="concrete" selected>Reinforced Concrete — BS EN 1992-1-1 (EC2)</option>
+<option value="steel">Structural Steel — BS EN 1993-1-1 (EC3)</option>
+<option value="timber">Timber / Glulam — BS EN 1995-1-1 (EC5)</option>
+<option value="masonry">Structural Masonry — BS EN 1996-1-1 (EC6)</option>
+<option value="stone">Natural Stone Masonry — BS EN 1996-1-1 (EC6)</option>
+<option value="generic">Custom / Generic Isotropic Material</option>
+</select>
+</div>
+<div id="mat_standard_div" class="control-group">
+<label>Standard Material Grade</label>
+<select id="mat_grade"></select>
+</div>
+<div id="mat_masonry_div" style="display: none; flex-direction: column; gap: 6px;">
+<div class="control-group">
+<label>Masonry Unit / Stone Characteristic Strength (fb)</label>
+<select id="masonry_unit_select" onchange="syncCustomFb()"></select>
+<input type="number" id="masonry_unit_fb" value="20" placeholder="Custom fb (MPa)" style="margin-top:2px;">
+</div>
+<div class="control-group">
+<label>Mortar Strength Class (fm)</label>
+<select id="mortar_select" onchange="syncCustomFm()"></select>
+<input type="number" id="mortar_fm" value="6" placeholder="Custom fm (MPa)" style="margin-top:2px;">
+</div>
+</div>
+<div id="mat_stone_extra_div" class="control-group" style="display: none;">
+<label>Natural Stone Modulus of Elasticity E (MPa)</label>
+<input type="number" id="stone_E" value="35000">
+</div>
+<div id="mat_generic_div" style="display: none; flex-direction: column; gap: 6px;">
+<div class="control-group">
+<label>Young's Modulus E (MPa)</label>
+<input type="number" id="custom_E" value="33000">
+</div>
+<div class="control-group">
+<label>Poisson's Ratio ν</label>
+<input type="number" step="0.01" id="custom_nu" value="0.20">
+</div>
+<div class="control-group">
+<label>Characteristic Design Yield Strength fk (MPa)</label>
+<input type="number" id="custom_fk" value="30">
+</div>
+<div class="control-group">
+<label>Unit Weight γ (kN/m³) — 0 disables self-weight</label>
+<input type="number" step="0.1" id="custom_gamma" value="25.0">
+</div>
+</div>
+<div class="control-group">
+<label>Domain Geometry Lx, Ly, Lz (mm)</label>
+<div style="display: flex; gap: 6px;">
+<input type="number" id="Lx" value="6000" min="1" style="width: 33%;" onchange="validatePositiveInputs(); updateDomainVisuals(); setupCutPlaneSliders();">
+<input type="number" id="Ly" value="300" min="1" style="width: 33%;" onchange="validatePositiveInputs(); updateDomainVisuals(); setupCutPlaneSliders();">
+<input type="number" id="Lz" value="600" min="1" style="width: 33%;" onchange="validatePositiveInputs(); updateDomainVisuals(); setupCutPlaneSliders();">
+</div>
+</div>
+<div class="control-group">
+<label>FE Mesh Divisions nx, ny, nz</label>
+<div style="display: flex; gap: 6px;">
+<input type="number" id="nx" value="36" min="1" style="width: 33%;" onchange="validatePositiveInputs();">
+<input type="number" id="ny" value="9" min="1" style="width: 33%;" onchange="validatePositiveInputs();">
+<input type="number" id="nz" value="12" min="1" style="width: 33%;" onchange="validatePositiveInputs();">
+</div>
+</div>
+<hr>
+<div class="section-header">Boundary Restraints</div>
+<div class="control-group">
+<label>Support Mode</label>
+<select id="support_mode" onchange="toggleSupportMode()">
+<option value="preset">Preset Configurations</option>
+<option value="custom">Arbitrary Spatial Bounding Box</option>
+<option value="points_only">Only User-Selected Discrete Points/Lines</option>
+</select>
+</div>
+<div id="preset_supports_div" class="control-group">
+<label>Support Presets</label>
+<select id="support_preset" onchange="updateDomainVisuals()">
+<option value="cantilever">Cantilever Wall (X = 0 mm, Fixed Face)</option>
+<option value="four_corners">Four Corners</option>
+<option value="all_edges">All Bottom Edges Supported (Slab on Perimeter)</option>
+</select>
+</div>
+<div id="custom_supports_div" style="display: none; flex-direction: column; gap: 6px;">
+<div class="control-group">
+<label>Support Box X Bounds [Min, Max] (mm)</label>
+<div style="display: flex; gap: 6px;">
+<input type="number" id="sup_x_min" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
+<input type="number" id="sup_x_max" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
+</div>
+</div>
+<div class="control-group">
+<label>Support Box Y Bounds [Min, Max] (mm)</label>
+<div style="display: flex; gap: 6px;">
+<input type="number" id="sup_y_min" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
+<input type="number" id="sup_y_max" value="300" style="width: 50%;" oninput="updateDomainVisuals()">
+</div>
+</div>
+<div class="control-group">
+<label>Support Box Z Bounds [Min, Max] (mm)</label>
+<div style="display: flex; gap: 6px;">
+<input type="number" id="sup_z_min" value="0" style="width: 50%;" oninput="updateDomainVisuals()">
+<input type="number" id="sup_z_max" value="600" style="width: 50%;" oninput="updateDomainVisuals()">
+</div>
+</div>
+<div class="checkbox-group">
+<label><input type="checkbox" id="dof_x" checked> Restrain Ux</label>
+<label><input type="checkbox" id="dof_y" checked> Restrain Uy</label>
+<label><input type="checkbox" id="dof_z" checked> Restrain Uz</label>
+</div>
+</div>
+<div class="control-group" style="margin-top: 4px;">
+<div class="load-header-row">
+<label style="margin: 0;">Discrete Point Supports (mm / DOFs)</label>
+<div class="btn-group">
+<button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addSupportRow()">+ Add Support Node</button>
+<button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllSupports()">Clear Point Supports</button>
+</div>
+</div>
+<table class="data-table">
+<thead><tr><th>X</th><th>Y</th><th>Z</th><th>DOFs</th><th></th></tr></thead>
+<tbody id="support_table_body"></tbody>
+</table>
+</div>
+<div class="control-group" style="margin-top: 6px;">
+<div class="load-header-row">
+<label style="margin: 0;">Discrete Line Supports (2-Point Generator)</label>
+<div class="btn-group">
+<button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addLineSupportRow()">+ Add Line Support</button>
+<button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllLineSupports()">Clear Line Supports</button>
+</div>
+</div>
+<table class="data-table">
+<thead>
+<tr>
+<th>X1</th><th>Y1</th><th>Z1</th>
+<th>X2</th><th>Y2</th><th>Z2</th>
+<th>DOFs</th><th></th>
+</tr>
+</thead>
+<tbody id="line_support_table_body"></tbody>
+</table>
+<p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 4px 0 0 0;">
+With Support Mode set to "Only User-Selected Discrete Points/Lines"
+above, these tables define the <em>only</em> boundary restraints. Line supports generate nodal restraint chains along the 3D vector. Make sure enough DOFs are locked across nodes to prevent rigid-body motion.
+</p>
+</div>
+<hr>
+<div class="section-header">Loading Definition</div>
+<div class="control-group">
+<label>Load Presets</label>
+<select id="load_preset" onchange="applyLoadPreset()">
+<option value="top_udl">Top Surface Uniform Patch Load</option>
+<option value="custom">Custom Point Load Array</option>
+<option value="tip_center">Single Center Point Load (X = Lx/2)</option>
+<option value="third_points">Third-Point Flexure Loads (X = Lx/3, 2Lx/3)</option>
+</select>
+</div>
+<div id="point_loads_container" class="control-group">
+<div class="load-header-row">
+<label style="margin: 0;">Point Load Array (mm / kN)</label>
+<div class="btn-group">
+<button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addLoadRow()">+ Add Load</button>
+<button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllLoads()">Clear All Loads</button>
+</div>
+</div>
+<table class="data-table">
+<thead><tr><th>X</th><th>Y</th><th>Z</th><th>Fx</th><th>Fy</th><th>Fz</th><th></th></tr></thead>
+<tbody id="load_table_body"></tbody>
+</table>
+<p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 4px 0 0 0;">
+An empty table means zero external load. If self-weight is also
+switched off below, the solver correctly returns a flat,
+zero-stress result — that's the expected physical answer for an
+unloaded body, not a bug.
+</p>
+</div>
+<hr>
+<div class="section-header">Void / Passive Material Regions</div>
+<div id="void_regions_container" class="control-group">
+<div class="load-header-row">
+<label style="margin: 0;">Keep-Out / Forced-Solid Boxes (mm)</label>
+<div class="btn-group">
+<button class="btn-secondary" style="padding: 2px 6px; font-size: 0.68rem;" onclick="addVoidRegionRow()">+ Add Region</button>
+<button class="btn-secondary-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="clearAllVoidRegions()">Clear All</button>
+</div>
+</div>
+<div id="void_region_list" style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;"></div>
+<p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 6px 0 0 0;">
+"Void" forces elements inside the box to stay empty regardless of what the optimiser would otherwise choose — useful for service penetrations, ducts, or doorways. "Forced Solid" pins material in place instead — useful for bearing pads or fixing zones. Overlapping a region with a load/support point produces an invalid model, so keep regions clear of load/support coordinates.
+</p>
+</div>
+<hr>
+<div class="control-group">
+<label>Volume Fraction &amp; Max Iterations</label>
+<div style="display: flex; gap: 6px;">
+<input type="number" step="0.05" id="volfrac" value="0.90" min="0.05" max="1.00" style="width: 50%;">
+<input type="number" id="iterations" value="20" min="1" style="width: 50%;">
+</div>
+<p style="font-size: 0.70rem; color: #888888; line-height: 1.45; margin: 4px 0 0 0;">
+Volume fraction sets the target proportion of the domain kept as solid
+material (0.90 = 90% by volume). Iterations sets how many SIMP
+optimisation passes run — more iterations generally converge to a
+cleaner, more resolved topology at the cost of longer solve time.
+</p>
+</div>
+<div class="checkbox-group" style="margin-top: 2px;">
+<label>
+<input type="checkbox" id="self_weight_toggle" checked>
+Include Self-Weight (Dead Load)
+</label>
+</div>
+<hr>
+<div class="section-header">Visualization Render Mode</div>
+<div class="control-group">
+<select id="render_mode" onchange="toggleRenderModeUI(); reRenderMesh();">
+<option value="ec3_stress">Stress Map (+Tension / -Compression)</option>
+<option value="grey">Monochrome Studio Grey (50%)</option>
+<option value="deflection">Displacement Map (Deflection mm)</option>
+</select>
+</div>
+<div id="stress_thresholds_div" class="control-group" style="margin-top: 4px; display: none;">
+<label style="font-weight: 700; text-transform: uppercase; font-size: 0.70rem; letter-spacing: 0.5px;">
+Interactive Stress Palette Faders
+</label>
+<p style="font-size: 0.68rem; color: #888888; margin: 0 0 4px 0; line-height: 1.3;">
+Adjust limits between 0.01 MPa and calculated peaks. Elements outside range render in Studio Grey.
+</p>
+<div style="display: flex; flex-direction: column; gap: 8px; background: #f9f9f9; padding: 8px; border: 1px solid #e5e5e5;">
+<div>
+<div style="display: flex; justify-content: space-between; font-size: 0.70rem; margin-bottom: 2px;">
+<span style="color: #0055cc; font-weight: 600;">Compression Limit (-MPa)</span>
+<span id="lbl_comp_val" style="font-weight: bold;">-0.01 MPa</span>
+</div>
+<input type="range" id="stress_comp_slider" min="0.01" max="1" step="0.01" value="1" oninput="onStressSliderChange()">
+</div>
+<div>
+<div style="display: flex; justify-content: space-between; font-size: 0.70rem; margin-bottom: 2px;">
+<span style="color: #cc0000; font-weight: 600;">Tension Limit (+MPa)</span>
+<span id="lbl_tens_val" style="font-weight: bold;">+0.01 MPa</span>
+</div>
+<input type="range" id="stress_tens_slider" min="0.01" max="1" step="0.01" value="1" oninput="onStressSliderChange()">
+</div>
+</div>
+</div>
+<hr>
+<div class="section-header">Interactive 3D Section Cut-Planes</div>
+<div class="control-group">
+<label>Cut Plane X Position (Longitudinal Cut)</label>
+<input type="range" id="cut_x" min="0" max="6000" step="10" value="6000" oninput="updateCutPlanes()">
+</div>
+<div class="control-group">
+<label>Cut Plane Y Position (Cross-Section Cut)</label>
+<input type="range" id="cut_y" min="0" max="300" step="5" value="300" oninput="updateCutPlanes()">
+</div>
+<div class="control-group">
+<label>Cut Plane Z Position (Height Cut)</label>
+<input type="range" id="cut_z" min="0" max="600" step="5" value="600" oninput="updateCutPlanes()">
+</div>
+<button id="btn-share" type="button" class="btn-secondary" onclick="generateShareableURL()">Copy Shareable Model URL</button>
+<div id="share-status" role="status" aria-live="polite" style="font-size:0.75rem;word-break:break-word;"></div>
+<button id="btn-exec" class="btn-primary" onclick="startOptimisation()" disabled>Loading Wasm Engine…</button>
+<button id="btn-stop" class="btn-stop" onclick="stopOptimisation()">■ Stop / Reset Engine</button>
+<div id="results-actions-group" style="display: none; gap: 6px; margin-top: 4px;">
+<button id="btn-export" class="btn-secondary" style="flex: 1;" onclick="exportSTL()">Export .STL Geometry</button>
+<button id="btn-clear" class="btn-secondary-danger" style="flex: 1;" onclick="clearResults()">Clear Results</button>
+</div>
+<div id="status">Initialising WebAssembly Python runtime…</div>
+</div>
 <div id="viewport">
-    <div id="legend">
-        <div id="legend-title">Field Map</div>
-        <div class="legend-bar-container">
-            <div id="legend-bar"></div>
-            <div class="legend-labels">
-                <span id="lbl-100">+Max</span>
-                <span id="lbl-075">+50%</span>
-                <span id="lbl-050">0.0</span>
-                <span id="lbl-025">-50%</span>
-                <span id="lbl-000">-Max</span>
-            </div>
-        </div>
-    </div>
+<div id="legend">
+<div id="legend-title">Field Map</div>
+<div class="legend-bar-container">
+<div id="legend-bar"></div>
+<div class="legend-labels">
+<span id="lbl-100">+Max</span>
+<span id="lbl-075">+50%</span>
+<span id="lbl-050">0.0</span>
+<span id="lbl-025">-50%</span>
+<span id="lbl-000">-Max</span>
+</div>
+</div>
+</div>
 </div>
 
 <script>
-    var scene, camera, renderer, controls, mesh;
-    var domainBox, supportBoxVisual;
-    var forceArrows = [];
-    var supportGizmos = [];
-    var voidRegionGizmos = [];
-    var currentVertices = [], currentFaces = [], currentStressesMPa = [], currentDeflectionsMM = [];
-    
-    // Explicit Asymmetric Stress Bounds Tracking
-    var currentSigmaMaxTens = 1.0;  // Peak Tensile Stress (+MPa)
-    var currentSigmaMaxComp = -1.0; // Peak Compressive Stress (-MPa, negative)
-    var currentUMax = 1.0, currentFk = 30.0;
-    var worker = null;
-    var engineReady = false;
-
-    var clipPlaneX = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 6000);
-    var clipPlaneY = new THREE.Plane(new THREE.Vector3(0, 0, -1), 300);
-    var clipPlaneZ = new THREE.Plane(new THREE.Vector3(0, -1, 0), 600);
-
-    // Minimalistic black/white 3D axis triad (screen-corner gizmo)
-    var axesScene, axesCamera, axesGroup;
-
-    var STEEL_GRADES = ["S235", "S275", "S355", "S460"];
-    var CONCRETE_GRADES = ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50", "C50/60"];
-    var TIMBER_GRADES = ["C16", "C24", "C30", "GL24h", "GL28h", "GL32h"];
-
-    var MASONRY_UNITS = {
-        "Clay Solid (30 MPa)": 30.0, "Clay Hollow (15 MPa)": 15.0,
-        "Dense Concrete Block (20 MPa)": 20.0, "Lightweight Block (7.3 MPa)": 7.3
-    };
-    var MORTAR_GRADES = {
-        "M12 (Strong)": 12.0, "M6 (General)": 6.0, "M4 (Medium)": 4.0, "M2 (Lime / Weak)": 2.0
-    };
-    var STONE_UNITS = {
-        "Granite (150 MPa)": { fb: 150.0, E: 50000.0 }, "Limestone (80 MPa)": { fb: 80.0, E: 35000.0 },
-        "Sandstone (50 MPa)": { fb: 50.0, E: 20000.0 }, "Marble (120 MPa)": { fb: 120.0, E: 45000.0 }
-    };
-
-    /* Strictly enforce absolute positive values on domain and mesh input fields */
-    function validatePositiveInputs() {
-        ['Lx', 'Ly', 'Lz', 'nx', 'ny', 'nz'].forEach(function(id) {
-            var el = document.getElementById(id);
-            if (el) {
-                var val = parseFloat(el.value);
-                if (isNaN(val) || val <= 0) {
-                    el.value = Math.abs(val) || (id.startsWith('n') ? 1 : 100);
-                } else {
-                    el.value = Math.abs(val);
-                }
-            }
-        });
-    }
-
-    function setVoidGizmosVisible(visible) {
-        voidRegionGizmos.forEach(function(g) { g.visible = visible; });
-    }
-
-    function setBoundaryGizmosVisible(visible) {
-        supportGizmos.forEach(function(g) { g.visible = visible; });
-        forceArrows.forEach(function(a) { a.visible = visible; });
-    }
-
-    function toggleRenderModeUI() {
-        var mode = document.getElementById('render_mode').value;
-        var thresholdDiv = document.getElementById('stress_thresholds_div');
-        thresholdDiv.style.display = (mode === 'ec3_stress' && currentVertices.length > 0) ? 'flex' : 'none';
-    }
-
-    function onStressSliderChange() {
-        var compVal = parseFloat(document.getElementById('stress_comp_slider').value) || 0.01;
-        var tensVal = parseFloat(document.getElementById('stress_tens_slider').value) || 0.01;
-        document.getElementById('lbl_comp_val').innerText = "-" + format2DP(compVal) + " MPa";
-        document.getElementById('lbl_tens_val').innerText = "+" + format2DP(tensVal) + " MPa";
-        reRenderMesh();
-    }
-
-    function updateMaterialUI() {
-        var matType = document.getElementById('mat_type').value;
-        var stdDiv = document.getElementById('mat_standard_div');
-        var masDiv = document.getElementById('mat_masonry_div');
-        var stoneEDiv = document.getElementById('mat_stone_extra_div');
-        var genDiv = document.getElementById('mat_generic_div');
-
-        stdDiv.style.display = 'none'; masDiv.style.display = 'none';
-        stoneEDiv.style.display = 'none'; genDiv.style.display = 'none';
-
-        if (matType === 'steel' || matType === 'concrete' || matType === 'timber') {
-            stdDiv.style.display = 'flex';
-            var gradeSelect = document.getElementById('mat_grade');
-            gradeSelect.innerHTML = '';
-            var list = (matType === 'concrete') ? CONCRETE_GRADES : ((matType === 'steel') ? STEEL_GRADES : TIMBER_GRADES);
-            list.forEach(function(g) {
-                var opt = document.createElement('option');
-                opt.value = g; opt.innerText = g;
-                gradeSelect.appendChild(opt);
-            });
-            gradeSelect.value = (matType === 'concrete') ? 'C30/37' : ((matType === 'steel') ? 'S355' : 'C24');
-        } else if (matType === 'masonry' || matType === 'stone') {
-            masDiv.style.display = 'flex';
-            var uSelect = document.getElementById('masonry_unit_select');
-            var mSelect = document.getElementById('mortar_select');
-            uSelect.innerHTML = ''; mSelect.innerHTML = '';
-            var units = (matType === 'masonry') ? MASONRY_UNITS : STONE_UNITS;
-            for (var key in units) {
-                var opt = document.createElement('option'); opt.value = key; opt.innerText = key;
-                uSelect.appendChild(opt);
-            }
-            for (var mkey in MORTAR_GRADES) {
-                var mopt = document.createElement('option'); mopt.value = mkey; mopt.innerText = mkey;
-                mSelect.appendChild(mopt);
-            }
-            syncCustomFb(); syncCustomFm();
-            if (matType === 'stone') stoneEDiv.style.display = 'flex';
-        } else if (matType === 'generic') {
-            genDiv.style.display = 'flex';
-        }
-    }
-
-    function syncCustomFb() {
-        var matType = document.getElementById('mat_type').value;
-        var key = document.getElementById('masonry_unit_select').value;
-        if (matType === 'masonry') {
-            document.getElementById('masonry_unit_fb').value = MASONRY_UNITS[key] || 20.0;
-        } else if (matType === 'stone') {
-            var data = STONE_UNITS[key];
-            if (data) {
-                document.getElementById('masonry_unit_fb').value = data.fb;
-                document.getElementById('stone_E').value = data.E;
-            }
-        }
-    }
-
-    function syncCustomFm() {
-        var key = document.getElementById('mortar_select').value;
-        document.getElementById('mortar_fm').value = MORTAR_GRADES[key] || 6.0;
-    }
-
-    function setupCutPlaneSliders() {
-        validatePositiveInputs();
-        var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
-        var Ly = Math.abs(parseFloat(document.getElementById('Ly').value)) || 300;
-        var Lz = Math.abs(parseFloat(document.getElementById('Lz').value)) || 600;
-        var sliderX = document.getElementById('cut_x');
-        var sliderY = document.getElementById('cut_y');
-        var sliderZ = document.getElementById('cut_z');
-        sliderX.max = Lx; sliderX.value = Lx;
-        sliderY.max = Ly; sliderY.value = Ly;
-        sliderZ.max = Lz; sliderZ.value = Lz;
-        updateCutPlanes();
-    }
-
-    function updateCutPlanes() {
-        clipPlaneX.constant = parseFloat(document.getElementById('cut_x').value);
-        clipPlaneY.constant = parseFloat(document.getElementById('cut_y').value);
-        clipPlaneZ.constant = parseFloat(document.getElementById('cut_z').value);
-    }
-
-    function initThree() {
-        var container = document.getElementById('viewport');
-        scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xffffff);
-
-        camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 1000000);
-        camera.position.set(7000, 3000, 4000);
-
-        renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(container.clientWidth, container.clientHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.localClippingEnabled = true;
-        container.appendChild(renderer.domElement);
-
-        controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-
-        scene.add(new THREE.AmbientLight(0xffffff, 0.65));
-        var keyLight = new THREE.DirectionalLight(0xffffff, 0.75);
-        keyLight.position.set(5000, 8000, 4000);
-        scene.add(keyLight);
-        var fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
-        fillLight.position.set(-3000, -2000, -2000);
-        scene.add(fillLight);
-
-        // Large finite grid (acts effectively infinite for typical domain sizes)
-        var grid = new THREE.GridHelper(500000, 500, 0x000000, 0xe0e0e0);
-        grid.position.y = -1;
-        scene.add(grid);
-
-        // --- Minimalistic black/white axis triad (bottom-left corner) ---
-        axesScene = new THREE.Scene();
-        axesCamera = new THREE.OrthographicCamera(-2.0, 2.0, 2.0, -2.0, 0.1, 10);
-        axesCamera.position.set(0, 0, 5);
-        axesCamera.lookAt(0, 0, 0);
-
-        axesGroup = new THREE.Group();
-        axesScene.add(axesGroup);
-
-        var axisLen = 1.2;
-        var axisMat = new THREE.LineBasicMaterial({ color: 0x000000 });
-
-        function addAxisLine(to) {
-            var geo = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(0, 0, 0), to
-            ]);
-            axesGroup.add(new THREE.Line(geo, axisMat));
-        }
-        addAxisLine(new THREE.Vector3(axisLen, 0, 0)); // X
-        addAxisLine(new THREE.Vector3(0, axisLen, 0)); // Z (up)
-        addAxisLine(new THREE.Vector3(0, 0, axisLen)); // Y
-
-        function makeAxisLabel(text) {
-            var canvas = document.createElement('canvas');
-            canvas.width = 128;
-            canvas.height = 128;
-            var ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, 128, 128);
-            ctx.fillStyle = '#000000';
-            ctx.font = 'bold 72px "Helvetica Neue", Helvetica, Arial, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, 64, 68);
-            var tex = new THREE.CanvasTexture(canvas);
-            tex.needsUpdate = true;
-            var mat = new THREE.SpriteMaterial({
-                map: tex,
-                transparent: true,
-                depthTest: false,
-                depthWrite: false
-            });
-            var sprite = new THREE.Sprite(mat);
-            sprite.scale.set(0.55, 0.55, 1);
-            return sprite;
-        }
-
-        var lblX = makeAxisLabel('X');
-        lblX.position.set(axisLen + 0.35, 0, 0);
-        axesGroup.add(lblX);
-
-        var lblZ = makeAxisLabel('Z');
-        lblZ.position.set(0, axisLen + 0.35, 0);
-        axesGroup.add(lblZ);
-
-        var lblY = makeAxisLabel('Y');
-        lblY.position.set(0, 0, axisLen + 0.35);
-        axesGroup.add(lblY);
-
-        window.addEventListener('resize', onWindowResize);
-        updateMaterialUI();
-
-        applyLoadPreset();
-        setupCutPlaneSliders();
-        animate();
-        updateDomainVisuals();
-    }
-
-    function animate() {
-        requestAnimationFrame(animate);
-        controls.update();
-        renderer.render(scene, camera);
-
-        if (axesGroup && axesScene && axesCamera) {
-            axesGroup.quaternion.copy(camera.quaternion).invert();
-
-            var size = 110;
-            var margin = 16;
-            var container = document.getElementById('viewport');
-            var w = container.clientWidth;
-            var h = container.clientHeight;
-
-            renderer.autoClear = false;
-            renderer.clearDepth();
-            renderer.setScissorTest(true);
-            renderer.setScissor(margin, margin, size, size);
-            renderer.setViewport(margin, margin, size, size);
-            renderer.render(axesScene, axesCamera);
-            renderer.setScissorTest(false);
-            renderer.setViewport(0, 0, w, h);
-            renderer.autoClear = true;
-        }
-    }
-
-    function onWindowResize() {
-        var container = document.getElementById('viewport');
-        camera.aspect = container.clientWidth / container.clientHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(container.clientWidth, container.clientHeight);
-    }
-
-    function toggleSupportMode() {
-        var mode = document.getElementById('support_mode').value;
-        document.getElementById('preset_supports_div').style.display = (mode === 'preset') ? 'flex' : 'none';
-        document.getElementById('custom_supports_div').style.display = (mode === 'custom') ? 'flex' : 'none';
-        updateDomainVisuals();
-    }
-
-    function addSupportRow(x, y, z, dofs) {
-        x = (x === undefined) ? 0 : x; y = (y === undefined) ? 150 : y;
-        z = (z === undefined) ? 0 : z; dofs = (dofs === undefined) ? 'xyz' : dofs;
-        var tbody = document.getElementById('support_table_body');
-        var tr = document.createElement('tr');
-        tr.innerHTML =
-            '<td><input type="number" class="sp-x" value="' + x + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="sp-y" value="' + y + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="sp-z" value="' + z + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="text" class="sp-dofs" value="' + dofs + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><button class="btn-del" onclick="deleteRow(this)">×</button></td>';
-        tbody.appendChild(tr);
-        updateDomainVisuals();
-    }
-
-    /* Add Discrete Line Support Row Generator */
-    function addLineSupportRow(x1, y1, z1, x2, y2, z2, dofs) {
-        var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
-        x1 = (x1 === undefined) ? 0 : x1; y1 = (y1 === undefined) ? 0 : y1; z1 = (z1 === undefined) ? 0 : z1;
-        x2 = (x2 === undefined) ? Lx : x2; y2 = (y2 === undefined) ? 0 : y2; z2 = (z2 === undefined) ? 0 : z2;
-        dofs = (dofs === undefined) ? 'xyz' : dofs;
-
-        var tbody = document.getElementById('line_support_table_body');
-        var tr = document.createElement('tr');
-        tr.innerHTML =
-            '<td><input type="number" class="lsp-x1" value="' + x1 + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="lsp-y1" value="' + y1 + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="lsp-z1" value="' + z1 + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="lsp-x2" value="' + x2 + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="lsp-y2" value="' + y2 + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="lsp-z2" value="' + z2 + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="text" class="lsp-dofs" value="' + dofs + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><button class="btn-del" onclick="deleteRow(this)">×</button></td>';
-        tbody.appendChild(tr);
-        updateDomainVisuals();
-    }
-
-    function addLoadRow(x, y, z, Fx, Fy, Fz) {
-        x = (x === undefined) ? 1200 : x; y = (y === undefined) ? 150 : y; z = (z === undefined) ? 600 : z;
-        Fx = (Fx === undefined) ? 0 : Fx; Fy = (Fy === undefined) ? 0 : Fy; Fz = (Fz === undefined) ? -12.5 : Fz;
-        var tbody = document.getElementById('load_table_body');
-        var tr = document.createElement('tr');
-        tr.innerHTML =
-            '<td><input type="number" class="ld-x" value="' + x + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="ld-y" value="' + y + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="ld-z" value="' + z + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="ld-fx" value="' + Fx + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="ld-fy" value="' + Fy + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><input type="number" class="ld-fz" value="' + Fz + '" oninput="updateDomainVisuals()"></td>' +
-            '<td><button class="btn-del" onclick="deleteRow(this)">×</button></td>';
-        tbody.appendChild(tr);
-        updateDomainVisuals();
-    }
-
-    function deleteRow(btn) {
-        var row = btn.parentNode.parentNode;
-        row.parentNode.removeChild(row);
-        updateDomainVisuals();
-    }
-
-    function clearAllSupports() {
-        var tbody = document.getElementById('support_table_body');
-        tbody.innerHTML = '';
-        updateDomainVisuals();
-    }
-
-    function clearAllLineSupports() {
-        var tbody = document.getElementById('line_support_table_body');
-        tbody.innerHTML = '';
-        updateDomainVisuals();
-    }
-
-    function clearAllLoads() {
-        var tbody = document.getElementById('load_table_body');
-        tbody.innerHTML = '';
-        document.getElementById('load_preset').value = 'custom';
-        updateDomainVisuals();
-    }
-
-    /* Redesigned Card-Based Void Region Management Functions */
-    function addVoidRegionRow(xMin, xMax, yMin, yMax, zMin, zMax, regionType) {
-        var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
-        var Ly = Math.abs(parseFloat(document.getElementById('Ly').value)) || 300;
-        var Lz = Math.abs(parseFloat(document.getElementById('Lz').value)) || 600;
-
-        xMin = (xMin === undefined) ? Math.round(Lx * 0.4) : xMin;
-        xMax = (xMax === undefined) ? Math.round(Lx * 0.6) : xMax;
-        yMin = (yMin === undefined) ? 0 : yMin;
-        yMax = (yMax === undefined) ? Ly : yMax;
-        zMin = (zMin === undefined) ? 0 : zMin;
-        zMax = (zMax === undefined) ? Math.round(Lz * 0.3) : zMax;
-        regionType = (regionType === undefined) ? 'void' : regionType;
-
-        var container = document.getElementById('void_region_list');
-        var card = document.createElement('div');
-        card.className = 'void-region-card';
-        card.style.cssText = 'background: #f9f9f9; border: 1px solid #e5e5e5; padding: 8px; display: flex; flex-direction: column; gap: 6px; position: relative;';
-
-        card.innerHTML = 
-            '<div style="display: flex; justify-content: space-between; align-items: center;">' +
-                '<select class="vr-type" onchange="updateDomainVisuals()" style="font-size: 0.72rem; font-weight: bold; padding: 2px 4px; width: 130px;">' +
-                    '<option value="void"' + (regionType === 'void' ? ' selected' : '') + '>Void (Keep-Out)</option>' +
-                    '<option value="solid"' + (regionType === 'solid' ? ' selected' : '') + '>Forced Solid</option>' +
-                '</select>' +
-                '<button class="btn-del" onclick="deleteVoidCard(this)" style="font-size: 0.85rem; padding: 0 4px;">×</button>' +
-            '</div>' +
-            '<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;">' +
-                '<div><label style="font-size: 0.62rem; color: #666; display:block;">X [Min, Max]</label>' +
-                    '<div style="display: flex; gap: 2px;">' +
-                        '<input type="number" class="vr-xmin" value="' + xMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
-                        '<input type="number" class="vr-xmax" value="' + xMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
-                    '</div>' +
-                '</div>' +
-                '<div><label style="font-size: 0.62rem; color: #666; display:block;">Y [Min, Max]</label>' +
-                    '<div style="display: flex; gap: 2px;">' +
-                        '<input type="number" class="vr-ymin" value="' + yMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
-                        '<input type="number" class="vr-ymax" value="' + yMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
-                    '</div>' +
-                '</div>' +
-                '<div><label style="font-size: 0.62rem; color: #666; display:block;">Z [Min, Max]</label>' +
-                    '<div style="display: flex; gap: 2px;">' +
-                        '<input type="number" class="vr-zmin" value="' + zMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
-                        '<input type="number" class="vr-zmax" value="' + zMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
-                    '</div>' +
-                '</div>' +
-            '</div>';
-
-        container.appendChild(card);
-        updateDomainVisuals();
-    }
-
-    function deleteVoidCard(btn) {
-        var card = btn.closest('.void-region-card');
-        if (card) card.parentNode.removeChild(card);
-        updateDomainVisuals();
-    }
-
-    function clearAllVoidRegions() {
-        var container = document.getElementById('void_region_list');
-        container.innerHTML = '';
-        updateDomainVisuals();
-    }
-
-    function getVoidRegionArrayData() {
-        var cards = document.querySelectorAll('#void_region_list .void-region-card');
-        var regions = [];
-        cards.forEach(function(c) {
-            regions.push({
-                x_min: parseFloat(c.querySelector('.vr-xmin').value) || 0,
-                x_max: parseFloat(c.querySelector('.vr-xmax').value) || 0,
-                y_min: parseFloat(c.querySelector('.vr-ymin').value) || 0,
-                y_max: parseFloat(c.querySelector('.vr-ymax').value) || 0,
-                z_min: parseFloat(c.querySelector('.vr-zmin').value) || 0,
-                z_max: parseFloat(c.querySelector('.vr-zmax').value) || 0,
-                region_type: c.querySelector('.vr-type').value || 'void'
-            });
-        });
-        return regions;
-    }
-
-    function applyLoadPreset() {
-        var preset = document.getElementById('load_preset').value;
-        var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
-        var Ly = Math.abs(parseFloat(document.getElementById('Ly').value)) || 300;
-        var Lz = Math.abs(parseFloat(document.getElementById('Lz').value)) || 600;
-        var tbody = document.getElementById('load_table_body');
-
-        if (preset === 'top_udl') {
-            tbody.innerHTML = '';
-            var num_x = 4, num_y = 2;
-            var load_per_point = -100.0 / (num_x * num_y);
-            for (var ix = 1; ix <= num_x; ix++) {
-                for (var iy = 1; iy <= num_y; iy++) {
-                    addLoadRow((ix / (num_x + 1)) * Lx, (iy / (num_y + 1)) * Ly, Lz, 0, 0, load_per_point);
-                }
-            }
-        } else if (preset === 'tip_center') {
-            tbody.innerHTML = '';
-            addLoadRow(Lx / 2.0, Ly / 2.0, Lz, 0, 0, -100);
-        } else if (preset === 'third_points') {
-            tbody.innerHTML = '';
-            addLoadRow(Lx / 3.0, Ly / 2.0, Lz, 0, 0, -50);
-            addLoadRow((2 * Lx) / 3.0, Ly / 2.0, Lz, 0, 0, -50);
-        }
-        updateDomainVisuals();
-    }
-
-    function getLoadArrayData() {
-        var rows = document.querySelectorAll('#load_table_body tr');
-        var loads = [];
-        rows.forEach(function(r) {
-            loads.push({
-                x: parseFloat(r.querySelector('.ld-x').value) || 0,
-                y: parseFloat(r.querySelector('.ld-y').value) || 0,
-                z: parseFloat(r.querySelector('.ld-z').value) || 0,
-                Fx: parseFloat(r.querySelector('.ld-fx').value) || 0,
-                Fy: parseFloat(r.querySelector('.ld-fy').value) || 0,
-                Fz: parseFloat(r.querySelector('.ld-fz').value) || 0
-            });
-        });
-        return loads;
-    }
-
-    function getPointSupportArrayData() {
-        var rows = document.querySelectorAll('#support_table_body tr');
-        var supports = [];
-        rows.forEach(function(r) {
-            supports.push({
-                x: parseFloat(r.querySelector('.sp-x').value) || 0,
-                y: parseFloat(r.querySelector('.sp-y').value) || 0,
-                z: parseFloat(r.querySelector('.sp-z').value) || 0,
-                dofs: (r.querySelector('.sp-dofs').value || 'xyz').toLowerCase()
-            });
-        });
-        return supports;
-    }
-
-    /* Extract Line Support Table Data */
-    function getLineSupportArrayData() {
-        var rows = document.querySelectorAll('#line_support_table_body tr');
-        var lineSupports = [];
-        rows.forEach(function(r) {
-            lineSupports.push({
-                x1: parseFloat(r.querySelector('.lsp-x1').value) || 0,
-                y1: parseFloat(r.querySelector('.lsp-y1').value) || 0,
-                z1: parseFloat(r.querySelector('.lsp-z1').value) || 0,
-                x2: parseFloat(r.querySelector('.lsp-x2').value) || 0,
-                y2: parseFloat(r.querySelector('.lsp-y2').value) || 0,
-                z2: parseFloat(r.querySelector('.lsp-z2').value) || 0,
-                dofs: (r.querySelector('.lsp-dofs').value || 'xyz').toLowerCase()
-            });
-        });
-        return lineSupports;
-    }
-
-    function updateDomainVisuals() {
-        validatePositiveInputs();
-        var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
-        var Ly = Math.abs(parseFloat(document.getElementById('Ly').value)) || 300;
-        var Lz = Math.abs(parseFloat(document.getElementById('Lz').value)) || 600;
-        var nz = Math.abs(parseInt(document.getElementById('nz').value)) || 12;
-
-        if (domainBox) scene.remove(domainBox);
-        var boxGeo = new THREE.BoxGeometry(Lx, Lz, Ly);
-        var edges = new THREE.EdgesGeometry(boxGeo);
-        domainBox = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x999999, linewidth: 1 }));
-        domainBox.position.set(Lx / 2.0, Lz / 2.0, Ly / 2.0);
-        scene.add(domainBox);
-
-        supportGizmos.forEach(function(g) { scene.remove(g); });
-        supportGizmos = [];
-
-        var dz = Lz / nz;
-        var size = Math.min(180.0, Math.max(80.0, dz * 1.5));
-        
-        var supMode = document.getElementById('support_mode').value;
-        var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 });
-        var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 });
-
-        if (supMode === 'preset') {
-            var preset = document.getElementById('support_preset').value;
-            
-            if (preset === 'cantilever') {
-                var wallGeo = new THREE.BoxGeometry(size * 0.4, Lz, Ly);
-                var wallMesh = new THREE.Mesh(wallGeo, pinMat);
-                wallMesh.position.set(-size * 0.2, Lz / 2.0, Ly / 2.0);
-                scene.add(wallMesh);
-                supportGizmos.push(wallMesh);
-
-            } else if (preset === 'four_corners') {
-                var cornerGeo = new THREE.ConeGeometry(size * 0.5, size, 4);
-                var corners = [[0, 0], [Lx, 0], [0, Ly], [Lx, Ly]];
-                corners.forEach(function(pt) {
-                    var cMesh = new THREE.Mesh(cornerGeo, pinMat);
-                    cMesh.position.set(pt[0], -size * 0.5, pt[1]);
-                    scene.add(cMesh);
-                    supportGizmos.push(cMesh);
-                });
-
-            } else if (preset === 'all_edges') {
-                var edgeT = Math.max(size * 0.2, Math.min(Lx, Ly) * 0.02);
-                var edgeH = size * 0.3;
-                var edgeGeoX = new THREE.BoxGeometry(Lx, edgeH, edgeT);
-                var edgeGeoY = new THREE.BoxGeometry(edgeT, edgeH, Ly);
-
-                var edgeFront = new THREE.Mesh(edgeGeoX, pinMat);
-                edgeFront.position.set(Lx / 2.0, -edgeH * 0.5, edgeT / 2.0);
-                scene.add(edgeFront); supportGizmos.push(edgeFront);
-
-                var edgeBack = new THREE.Mesh(edgeGeoX, pinMat);
-                edgeBack.position.set(Lx / 2.0, -edgeH * 0.5, Ly - edgeT / 2.0);
-                scene.add(edgeBack); supportGizmos.push(edgeBack);
-
-                var edgeLeft = new THREE.Mesh(edgeGeoY, pinMat);
-                edgeLeft.position.set(edgeT / 2.0, -edgeH * 0.5, Ly / 2.0);
-                scene.add(edgeLeft); supportGizmos.push(edgeLeft);
-
-                var edgeRight = new THREE.Mesh(edgeGeoY, pinMat);
-                edgeRight.position.set(Lx - edgeT / 2.0, -edgeH * 0.5, Ly / 2.0);
-                scene.add(edgeRight); supportGizmos.push(edgeRight);
-            }
-        }
-
-        if (supportBoxVisual) scene.remove(supportBoxVisual);
-        if (supMode === 'custom') {
-            var xMin = parseFloat(document.getElementById('sup_x_min').value) || 0;
-            var xMax = parseFloat(document.getElementById('sup_x_max').value) || 0;
-            var yMin = parseFloat(document.getElementById('sup_y_min').value) || 0;
-            var yMax = parseFloat(document.getElementById('sup_y_max').value) || 0;
-            var zMin = parseFloat(document.getElementById('sup_z_min').value) || 0;
-            var zMax = parseFloat(document.getElementById('sup_z_max').value) || 0;
-            
-            var dx = Math.max(xMax - xMin, size * 0.5), dy = Math.max(yMax - yMin, size * 0.5), dz_box = Math.max(zMax - zMin, size * 0.5);
-            var supGeo = new THREE.BoxGeometry(dx, dz_box, dy);
-            var supMesh = new THREE.Mesh(supGeo, pinMat);
-            supMesh.position.set(xMin + dx / 2.0, zMin + dz_box / 2.0, yMin + dy / 2.0);
-            scene.add(supMesh);
-            supportGizmos.push(supMesh);
-        }
-
-        // Render Discrete Point Supports
-        var pointSups = getPointSupportArrayData();
-        var ptPinGeo = new THREE.ConeGeometry(size * 0.4, size * 0.7, 4);
-        var ptRollerGeo = new THREE.CylinderGeometry(size * 0.2, size * 0.2, size * 0.7, 16);
-
-        pointSups.forEach(function(ps) {
-            var isPin = ps.dofs.includes('x') && ps.dofs.includes('y') && ps.dofs.includes('z');
-            var ptMesh;
-
-            if (isPin) {
-                ptMesh = new THREE.Mesh(ptPinGeo, pinMat);
-                ptMesh.position.set(ps.x, ps.z - size * 0.35, ps.y);
-            } else {
-                ptMesh = new THREE.Mesh(ptRollerGeo, rollerMat);
-                ptMesh.rotation.x = Math.PI / 2;
-                ptMesh.position.set(ps.x, ps.z - size * 0.2, ps.y);
-            }
-
-            scene.add(ptMesh);
-            supportGizmos.push(ptMesh);
-        });
-
-        /* Render Discrete 3D Line Support Gizmos */
-        var lineSups = getLineSupportArrayData();
-        lineSups.forEach(function(ls) {
-            var p1 = new THREE.Vector3(ls.x1, ls.z1, ls.y1);
-            var p2 = new THREE.Vector3(ls.x2, ls.z2, ls.y2);
-            var lineVec = new THREE.Vector3().subVectors(p2, p1);
-            var len = lineVec.length();
-
-            if (len > 1e-3) {
-                var isPin = ls.dofs.includes('x') && ls.dofs.includes('y') && ls.dofs.includes('z');
-                var mat = isPin ? pinMat : rollerMat;
-                
-                var cylGeo = new THREE.CylinderGeometry(size * 0.15, size * 0.15, len, 12);
-                var cylMesh = new THREE.Mesh(cylGeo, mat);
-                
-                var mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
-                cylMesh.position.copy(mid);
-                
-                var axis = new THREE.Vector3(0, 1, 0);
-                cylMesh.quaternion.setFromUnitVectors(axis, lineVec.clone().normalize());
-                
-                scene.add(cylMesh);
-                supportGizmos.push(cylMesh);
-            }
-        });
-
-        forceArrows.forEach(function(a) { scene.remove(a); });
-        forceArrows = [];
-        getLoadArrayData().forEach(function(ld) {
-            var dirVector = new THREE.Vector3(ld.Fx, ld.Fz, ld.Fy);
-            var forceMag = dirVector.length();
-            if (forceMag > 1e-3) {
-                dirVector.normalize();
-                var origin = new THREE.Vector3(ld.x, ld.z, ld.y);
-                var arrowLength = Math.min(Math.max(forceMag * 1.2, size), size * 2.5);
-                var arrow = new THREE.ArrowHelper(dirVector, origin, arrowLength, 0xcc0000, arrowLength * 0.25, arrowLength * 0.12);
-                scene.add(arrow);
-                forceArrows.push(arrow);
-            }
-        });
-
-        voidRegionGizmos.forEach(function(g) { scene.remove(g); });
-        voidRegionGizmos = [];
-        var voidFillMat = new THREE.MeshStandardMaterial({
-            color: 0xff9900, roughness: 0.6, transparent: true, opacity: 0.28,
-            side: THREE.DoubleSide, depthWrite: false
-        });
-        var solidFillMat = new THREE.MeshStandardMaterial({
-            color: 0x2255ee, roughness: 0.6, transparent: true, opacity: 0.28,
-            side: THREE.DoubleSide, depthWrite: false
-        });
-        getVoidRegionArrayData().forEach(function(vr) {
-            var dx = Math.max(vr.x_max - vr.x_min, 1.0);
-            var dy = Math.max(vr.y_max - vr.y_min, 1.0);
-            var dz_box = Math.max(vr.z_max - vr.z_min, 1.0);
-            var regGeo = new THREE.BoxGeometry(dx, dz_box, dy);
-            var fillMat = (vr.region_type === 'solid') ? solidFillMat : voidFillMat;
-            var regMesh = new THREE.Mesh(regGeo, fillMat);
-            regMesh.position.set(vr.x_min + dx / 2.0, vr.z_min + dz_box / 2.0, vr.y_min + dy / 2.0);
-            scene.add(regMesh);
-            voidRegionGizmos.push(regMesh);
-
-            var regEdges = new THREE.EdgesGeometry(regGeo);
-            var edgeColor = (vr.region_type === 'solid') ? 0x2255ee : 0xcc6600;
-            var regWire = new THREE.LineSegments(regEdges, new THREE.LineBasicMaterial({ color: edgeColor }));
-            regWire.position.copy(regMesh.position);
-            scene.add(regWire);
-            voidRegionGizmos.push(regWire);
-        });
-
-        setVoidGizmosVisible(true);
-        setBoundaryGizmosVisible(true);
-    }
-
-    function initWasmEngine() {
-        worker = new Worker('solver_worker.js?cb=' + Date.now());
-        worker.onmessage = handleWorkerMessage;
-        worker.postMessage({ action: 'init' });
-    }
-
-    function handleWorkerMessage(e) {
-        var data = e.data;
-        var status = document.getElementById('status');
-        var btnExec = document.getElementById('btn-exec');
-        var btnStop = document.getElementById('btn-stop');
-        var actionsGroup = document.getElementById('results-actions-group');
-
-        if (data.status === 'log') {
-            status.style.color = "#000000";
-            status.style.borderLeftColor = "#000000";
-            status.innerText = data.message;
-
-        } else if (data.status === 'ready') {
-            engineReady = true;
-            status.style.color = "#000000";
-            status.style.borderLeftColor = "#000000";
-            status.innerText = "Wasm Engine Ready. Define problem parameters.";
-            btnExec.disabled = false;
-            btnExec.innerText = "Execute Optimisation";
-
-        } else if (data.status === 'running') {
-            status.style.color = "#000000";
-            status.style.borderLeftColor = "#000000";
-            var phase = data.phase || "Solving";
-            var iterTxt = (data.total_iter ? (" — Iteration " + data.current_iter + " / " + data.total_iter) : "");
-            var speedTxt = data.last_iter_ms ? (" (" + data.last_iter_ms + " ms/iter)") : "";
-            status.innerText = phase + iterTxt + speedTxt;
-
-        } else if (data.status === 'completed') {
-            btnExec.disabled = false;
-            btnExec.innerText = "Execute Optimisation";
-            btnStop.style.display = 'none';
-            actionsGroup.style.display = 'flex';
-
-            currentVertices = data.data.vertices;
-            currentFaces = data.data.faces;
-            currentStressesMPa = data.data.stresses_mpa;
-            currentDeflectionsMM = data.data.deflections_mm || [];
-            
-            currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_tens : Math.max(0.0, ...currentStressesMPa);
-            currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : Math.min(0.0, ...currentStressesMPa);
-            currentUMax = data.data.u_max;
-            currentFk = data.data.f_k || 30.0;
-
-            var compSlider = document.getElementById('stress_comp_slider');
-            var tensSlider = document.getElementById('stress_tens_slider');
-
-            var maxCompAbs = Math.ceil(Math.abs(currentSigmaMaxComp) * 100) / 100;
-            compSlider.max = maxCompAbs > 0.01 ? maxCompAbs : 0.01;
-            compSlider.value = compSlider.max;
-
-            var maxTensRounded = Math.ceil(currentSigmaMaxTens * 100) / 100;
-            tensSlider.max = maxTensRounded > 0.01 ? maxTensRounded : 0.01;
-            tensSlider.value = tensSlider.max;
-
-            onStressSliderChange();
-
-            status.style.color = "#000000";
-            status.style.borderLeftColor = "#000000";
-            status.innerText = "Optimisation complete in " + (data.data.solve_time_s || "?") + "s [" +
-                (data.data.material_name || "") + "]. Rendering...";
-            toggleRenderModeUI();
-            reRenderMesh();
-
-        } else if (data.status === 'error') {
-            btnExec.disabled = false;
-            btnExec.innerText = "Execute Optimisation";
-            btnStop.style.display = 'none';
-            status.style.color = "#cc0000";
-            status.style.borderLeftColor = "#cc0000";
-            status.innerText = "Solver Error: " + data.message;
-        }
-    }
-
-    function startOptimisation() {
-        if (!engineReady) return;
-        validatePositiveInputs();
-        var status = document.getElementById('status');
-        status.style.color = "#000000";
-        status.style.borderLeftColor = "#000000";
-        status.innerText = "Dispatching FE solver to Wasm worker...";
-
-        document.getElementById('btn-exec').disabled = true;
-        document.getElementById('btn-stop').style.display = 'block';
-        document.getElementById('results-actions-group').style.display = 'none';
-
-        var dofs = '';
-        if (document.getElementById('dof_x').checked) dofs += 'x';
-        if (document.getElementById('dof_y').checked) dofs += 'y';
-        if (document.getElementById('dof_z').checked) dofs += 'z';
-
-        var payload = {
-            material_type: document.getElementById('mat_type').value,
-            material_grade: document.getElementById('mat_grade').value,
-            masonry_unit_fb: parseFloat(document.getElementById('masonry_unit_fb').value) || 20.0,
-            mortar_fm: parseFloat(document.getElementById('mortar_fm').value) || 6.0,
-            stone_E: parseFloat(document.getElementById('stone_E').value) || 35000.0,
-            custom_E: parseFloat(document.getElementById('custom_E').value) || 33000.0,
-            custom_nu: parseFloat(document.getElementById('custom_nu').value) || 0.20,
-            custom_fk: parseFloat(document.getElementById('custom_fk').value) || 30.0,
-            custom_gamma_kn_m3: parseFloat(document.getElementById('custom_gamma').value) || 25.0,
-            Lx: Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000,
-            Ly: Math.abs(parseFloat(document.getElementById('Ly').value)) || 300,
-            Lz: Math.abs(parseFloat(document.getElementById('Lz').value)) || 600,
-            nx: Math.abs(parseInt(document.getElementById('nx').value)) || 36,
-            ny: Math.abs(parseInt(document.getElementById('ny').value)) || 9,
-            nz: Math.abs(parseInt(document.getElementById('nz').value)) || 12,
-            volfrac: parseFloat(document.getElementById('volfrac').value),
-            support_mode: document.getElementById('support_mode').value,
-            support_preset: document.getElementById('support_preset').value,
-            sup_x_min: parseFloat(document.getElementById('sup_x_min').value),
-            sup_x_max: parseFloat(document.getElementById('sup_x_max').value),
-            sup_y_min: parseFloat(document.getElementById('sup_y_min').value),
-            sup_y_max: parseFloat(document.getElementById('sup_y_max').value),
-            sup_z_min: parseFloat(document.getElementById('sup_z_min').value),
-            sup_z_max: parseFloat(document.getElementById('sup_z_max').value),
-            sup_dofs: dofs,
-            point_supports: getPointSupportArrayData(),
-            line_supports: getLineSupportArrayData(),
-            load_preset: document.getElementById('load_preset').value,
-            loads: getLoadArrayData(),
-            void_regions: getVoidRegionArrayData(),
-            iterations: Math.abs(parseInt(document.getElementById('iterations').value)) || 20,
-            include_self_weight: document.getElementById('self_weight_toggle').checked
-        };
-
-        worker.postMessage({ action: 'solve', payload: payload });
-    }
-
-    function stopOptimisation() {
-        var status = document.getElementById('status');
-        status.style.color = "#cc0000";
-        status.style.borderLeftColor = "#cc0000";
-        status.innerText = "Terminating and reloading Wasm engine...";
-
-        document.getElementById('btn-stop').style.display = 'none';
-        document.getElementById('btn-exec').disabled = true;
-        document.getElementById('btn-exec').innerText = "Loading Wasm Engine…";
-        document.getElementById('results-actions-group').style.display = 'none';
-        engineReady = false;
-
-        if (worker) worker.terminate();
-        initWasmEngine();
-    }
-
-    function clearResults() {
-        currentVertices = [];
-        currentFaces = [];
-        currentStressesMPa = [];
-        currentDeflectionsMM = [];
-
-        if (mesh) {
-            scene.remove(mesh);
-            mesh = null;
-        }
-
-        document.getElementById('legend').style.display = 'none';
-        document.getElementById('results-actions-group').style.display = 'none';
-        document.getElementById('stress_thresholds_div').style.display = 'none';
-
-        var status = document.getElementById('status');
-        status.style.color = "#000000";
-        status.style.borderLeftColor = "#000000";
-        status.innerText = "Results cleared. Ready to define parameters.";
-
-        updateDomainVisuals();
-    }
-
-    function format2DP(val) {
-        return Number(val).toFixed(2);
-    }
-
-    function formatMPa(val) {
-        return format2DP(val) + " MPa";
-    }
-
-    function formatMM(val) {
-        return format2DP(val) + " mm";
-    }
-
-    function updateLegendLabels(isDeflectionMode) {
-        var legendTitle = document.getElementById('legend-title');
-        if (isDeflectionMode) {
-            legendTitle.innerText = "Displacement Map (mm)";
-            document.getElementById('lbl-100').innerText = formatMM(currentUMax) + " (Max Uz)";
-            document.getElementById('lbl-075').innerText = formatMM(currentUMax * 0.75);
-            document.getElementById('lbl-050').innerText = formatMM(currentUMax * 0.50);
-            document.getElementById('lbl-025').innerText = formatMM(currentUMax * 0.25);
-            document.getElementById('lbl-000').innerText = "0.00 mm";
-        } else {
-            var activeMaxComp = -Math.abs(parseFloat(document.getElementById('stress_comp_slider').value) || Math.abs(currentSigmaMaxComp));
-            var activeMaxTens = parseFloat(document.getElementById('stress_tens_slider').value) || currentSigmaMaxTens;
-
-            legendTitle.innerText = "Stress Map (MPa)";
-            document.getElementById('lbl-100').innerText = "+" + formatMPa(activeMaxTens);
-            document.getElementById('lbl-075').innerText = "+" + formatMPa(activeMaxTens * 0.50);
-            document.getElementById('lbl-050').innerText = "0.00 MPa";
-            document.getElementById('lbl-025').innerText = formatMPa(activeMaxComp * 0.50);
-            document.getElementById('lbl-000').innerText = formatMPa(activeMaxComp);
-        }
-    }
-
-    function reRenderMesh() {
-        var legend = document.getElementById('legend');
-        var mode = document.getElementById('render_mode').value;
-        var isDeflectionMode = (mode === 'deflection');
-
-        if (!currentVertices.length || !currentFaces.length) return;
-
-        setVoidGizmosVisible(false);
-        setBoundaryGizmosVisible(true);
-
-        if (mode === 'ec3_stress' || mode === 'deflection') {
-            updateLegendLabels(isDeflectionMode);
-            legend.style.display = 'flex';
-        } else {
-            legend.style.display = 'none';
-        }
-
-        if (mesh) scene.remove(mesh);
-
-        var geometry = new THREE.BufferGeometry();
-        var positions = [];
-        var colors = [];
-
-        var activeMaxComp = -Math.abs(parseFloat(document.getElementById('stress_comp_slider').value) || Math.abs(currentSigmaMaxComp));
-        var activeMaxTens = parseFloat(document.getElementById('stress_tens_slider').value) || currentSigmaMaxTens;
-
-        var colorScaleSignedAsymmetric = function(val, maxTens, minComp) {
-            if (val > maxTens || val < minComp) {
-                return new THREE.Color(0x808080);
-            }
-            var h;
-            if (val >= 0) {
-                var normTens = (maxTens > 1e-6) ? Math.min(val / maxTens, 1.0) : 0.0;
-                h = (1.0 - normTens) * 120.0 / 360.0;
-            } else {
-                var normComp = (Math.abs(minComp) > 1e-6) ? Math.min(Math.abs(val / minComp), 1.0) : 0.0;
-                h = (120.0 + normComp * 120.0) / 360.0;
-            }
-            var c = new THREE.Color(); 
-            c.setHSL(h, 0.85, 0.45); 
-            return c;
-        };
-
-        var colorScaleUnsigned = function(val, maxVal) {
-            var norm = (maxVal > 1e-6) ? Math.min(Math.max(val / maxVal, 0.0), 1.0) : 0.0;
-            var h = (1.0 - norm) * 240.0 / 360.0;
-            var c = new THREE.Color(); 
-            c.setHSL(h, 0.85, 0.45); 
-            return c;
-        };
-
-        var activeFieldArray = isDeflectionMode ? currentDeflectionsMM : currentStressesMPa;
-        var hasFieldData = activeFieldArray && activeFieldArray.length === currentVertices.length;
-
-        currentFaces.forEach(function(f) {
-            var p1 = currentVertices[f[0]], p2 = currentVertices[f[1]], p3 = currentVertices[f[2]];
-            positions.push(p1[0], p1[2], p1[1]);
-            positions.push(p2[0], p2[2], p2[1]);
-            positions.push(p3[0], p3[2], p3[1]);
-
-            if (hasFieldData && (mode === 'ec3_stress' || mode === 'deflection')) {
-                var s1 = activeFieldArray[f[0]] || 0.0, s2 = activeFieldArray[f[1]] || 0.0, s3 = activeFieldArray[f[2]] || 0.0;
-                var c1, c2, c3;
-                
-                if (isDeflectionMode) {
-                    c1 = colorScaleUnsigned(s1, currentUMax);
-                    c2 = colorScaleUnsigned(s2, currentUMax);
-                    c3 = colorScaleUnsigned(s3, currentUMax);
-                } else {
-                    c1 = colorScaleSignedAsymmetric(s1, activeMaxTens, activeMaxComp);
-                    c2 = colorScaleSignedAsymmetric(s2, activeMaxTens, activeMaxComp);
-                    c3 = colorScaleSignedAsymmetric(s3, activeMaxTens, activeMaxComp);
-                }
-                
-                colors.push(c1.r, c1.g, c1.b); 
-                colors.push(c2.r, c2.g, c2.b); 
-                colors.push(c3.r, c3.g, c3.b);
-            }
-        });
-
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-
-        var material;
-        if (hasFieldData && (mode === 'ec3_stress' || mode === 'deflection')) {
-            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-            geometry.computeVertexNormals();
-            material = new THREE.MeshStandardMaterial({
-                vertexColors: true, roughness: 0.40, metalness: 0.10, side: THREE.DoubleSide,
-                clippingPlanes: [clipPlaneX, clipPlaneY, clipPlaneZ], clipShadows: true
-            });
-        } else {
-            geometry.computeVertexNormals();
-            material = new THREE.MeshStandardMaterial({
-                color: 0x808080, roughness: 0.50, metalness: 0.10, side: THREE.DoubleSide,
-                clippingPlanes: [clipPlaneX, clipPlaneY, clipPlaneZ], clipShadows: true
-            });
-        }
-
-        mesh = new THREE.Mesh(geometry, material);
-        scene.add(mesh);
-    }
-
-    function exportSTL() {
-        if (!currentVertices.length || !currentFaces.length) {
-            alert("No solved topology geometry available for export.");
-            return;
-        }
-        var stl = "solid DBSW_Optimised_Mesh\n";
-        currentFaces.forEach(function(f) {
-            var p1 = currentVertices[f[0]], p2 = currentVertices[f[1]], p3 = currentVertices[f[2]];
-
-            var ux = p2[0]-p1[0], uy = p2[1]-p1[1], uz = p2[2]-p1[2];
-            var vx = p3[0]-p1[0], vy = p3[1]-p1[1], vz = p3[2]-p1[2];
-            var nx = uy*vz - uz*vy, ny = uz*vx - ux*vz, nz = ux*vy - uy*vx;
-            var nlen = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1.0;
-            nx /= nlen; ny /= nlen; nz /= nlen;
-
-            stl += "  facet normal " + nx + " " + ny + " " + nz + "\n    outer loop\n";
-            stl += "      vertex " + p1[0] + " " + p1[1] + " " + p1[2] + "\n";
-            stl += "      vertex " + p2[0] + " " + p2[1] + " " + p2[2] + "\n";
-            stl += "      vertex " + p3[0] + " " + p3[1] + " " + p3[2] + "\n";
-            stl += "    endloop\n  endfacet\n";
-        });
-        stl += "endsolid DBSW_Optimised_Mesh\n";
-        var blob = new Blob([stl], { type: 'text/plain' });
-        var link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'DBSW_Topology_Mesh.stl';
-        link.click();
-    }
-
-    // ------------------------------------------------------------
-    // Sidebar collapse / expand
-    // ------------------------------------------------------------
-    function toggleSidebar() {
-        var collapsed = document.body.classList.toggle('sidebar-collapsed');
-        var toggle = document.getElementById('sidebar-toggle');
-
-        if (toggle) {
-            toggle.setAttribute('aria-expanded', String(!collapsed));
-            toggle.setAttribute(
-                'aria-label',
-                collapsed ? 'Expand control panel' : 'Collapse control panel'
-            );
-            toggle.setAttribute(
-                'title',
-                collapsed ? 'Expand control panel' : 'Collapse control panel'
-            );
-        }
-
-        // Wait for the CSS width transition to finish, then update
-        // the Three.js renderer/camera to the new viewport dimensions.
-        window.setTimeout(function () {
-            if (typeof onWindowResize === 'function') {
-                onWindowResize();
-            }
-        }, 300);
-    }
-
-    function initialiseSidebarToggle() {
-        var toggle = document.getElementById('sidebar-toggle');
-        if (!toggle) return;
-
-        toggle.addEventListener('click', toggleSidebar);
-    }
-
-    initialiseSidebarToggle();
-
-    initThree();
-    initWasmEngine();
+var scene, camera, renderer, controls, mesh;
+var domainBox, supportBoxVisual;
+var forceArrows = [];
+var supportGizmos = [];
+var voidRegionGizmos = [];
+var currentVertices = [], currentFaces = [], currentStressesMPa = [], currentDeflectionsMM = [];
+var currentSigmaMaxTens = 1.0;
+var currentSigmaMaxComp = -1.0;
+var currentUMax = 1.0, currentFk = 30.0;
+var worker = null;
+var engineReady = false;
+var clipPlaneX = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 6000);
+var clipPlaneY = new THREE.Plane(new THREE.Vector3(0, 0, -1), 300);
+var clipPlaneZ = new THREE.Plane(new THREE.Vector3(0, -1, 0), 600);
+var axesScene, axesCamera, axesGroup;
+var STEEL_GRADES = ["S235", "S275", "S355", "S460"];
+var CONCRETE_GRADES = ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50", "C50/60"];
+var TIMBER_GRADES = ["C16", "C24", "C30", "GL24h", "GL28h", "GL32h"];
+var MASONRY_UNITS = {
+"Clay Solid (30 MPa)": 30.0, "Clay Hollow (15 MPa)": 15.0,
+"Dense Concrete Block (20 MPa)": 20.0, "Lightweight Block (7.3 MPa)": 7.3
+};
+var MORTAR_GRADES = {
+"M12 (Strong)": 12.0, "M6 (General)": 6.0, "M4 (Medium)": 4.0, "M2 (Lime / Weak)": 2.0
+};
+var STONE_UNITS = {
+"Granite (150 MPa)": { fb: 150.0, E: 50000.0 }, "Limestone (80 MPa)": { fb: 80.0, E: 35000.0 },
+"Sandstone (50 MPa)": { fb: 50.0, E: 20000.0 }, "Marble (120 MPa)": { fb: 120.0, E: 45000.0 }
+};
+var restoringURLState = false;
+
+function collectModelState() {
+var fields = {};
+document.querySelectorAll('#sidebar input[id], #sidebar select[id]').forEach(function(el) {
+fields[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+});
+return {
+version: 1,
+fields: fields,
+point_supports: getPointSupportArrayData(),
+line_supports: getLineSupportArrayData(),
+loads: getLoadArrayData(),
+void_regions: getVoidRegionArrayData()
+};
+}
+
+async function generateShareableURL() {
+var feedback = document.getElementById('share-status');
+try {
+var json = JSON.stringify(collectModelState());
+var bytes = new TextEncoder().encode(json);
+var binary = Array.from(bytes, function(b) { return String.fromCharCode(b); }).join('');
+var url = new URL(window.location.href);
+url.hash = 'state=' + encodeURIComponent(btoa(binary));
+await navigator.clipboard.writeText(url.href);
+feedback.textContent = 'Model URL copied to clipboard.';
+return url.href;
+} catch (error) {
+feedback.textContent = 'Could not copy the URL: ' + error.message;
+return null;
+}
+}
+
+function loadStateFromURL() {
+var encoded = new URLSearchParams(window.location.hash.slice(1)).get('state');
+if (encoded === null) return false;
+var feedback = document.getElementById('share-status');
+try {
+var binary = atob(encoded.replace(/ /g, '+'));
+var bytes = Uint8Array.from(binary, function(c) { return c.charCodeAt(0); });
+var state = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+if (!state || state.version !== 1 || !state.fields || typeof state.fields !== 'object' || Array.isArray(state.fields)) {
+throw new Error('Unsupported model state.');
+}
+function validateRows(name, keys, withDOFs, withType) {
+if (!Array.isArray(state[name])) throw new Error('Invalid ' + name + '.');
+state[name].forEach(function(row) {
+if (!row || keys.some(function(k) { return typeof row[k] !== 'number' || !Number.isFinite(row[k]); })) {
+throw new Error('Invalid numeric data in ' + name + '.');
+}
+if (withDOFs && (typeof row.dofs !== 'string' || !/^[xyz]*$/i.test(row.dofs))) throw new Error('Invalid support DOFs.');
+if (withType && row.region_type !== 'void' && row.region_type !== 'solid') throw new Error('Invalid passive region.');
+});
+}
+validateRows('point_supports', ['x','y','z'], true, false);
+validateRows('line_supports', ['x1','y1','z1','x2','y2','z2'], true, false);
+validateRows('loads', ['x','y','z','Fx','Fy','Fz'], false, false);
+validateRows('void_regions', ['x_min','x_max','y_min','y_max','z_min','z_max'], false, true);
+
+function restoreField(id) {
+if (!Object.prototype.hasOwnProperty.call(state.fields, id)) return;
+var el = document.getElementById(id), value = state.fields[id];
+if (!el || !el.closest('#sidebar') || !el.matches('input, select')) return;
+if (el.type === 'checkbox') {
+if (typeof value === 'boolean') el.checked = value;
+} else if (typeof value === 'string' || typeof value === 'number') {
+if (el.tagName !== 'SELECT' || Array.from(el.options).some(function(o) { return o.value === String(value); })) {
+el.value = value;
+}
+}
+}
+
+restoringURLState = true;
+restoreField('mat_type');
+updateMaterialUI();
+Object.keys(state.fields).forEach(function(id) {
+if (!['cut_x','cut_y','cut_z','stress_comp_slider','stress_tens_slider'].includes(id)) restoreField(id);
+});
+validatePositiveInputs();
+setupCutPlaneSliders();
+['cut_x','cut_y','cut_z'].forEach(restoreField);
+['stress_comp_slider','stress_tens_slider'].forEach(function(id) {
+var value = Number(state.fields[id]);
+if (Number.isFinite(value) && value >= 0.01) {
+document.getElementById(id).max = Math.max(1, value);
+}
+restoreField(id);
+});
+document.getElementById('support_table_body').replaceChildren();
+document.getElementById('line_support_table_body').replaceChildren();
+document.getElementById('load_table_body').replaceChildren();
+document.getElementById('void_region_list').replaceChildren();
+state.point_supports.forEach(function(r) {
+addSupportRow(r.x, r.y, r.z, r.dofs);
+});
+state.line_supports.forEach(function(r) {
+addLineSupportRow(r.x1, r.y1, r.z1, r.x2, r.y2, r.z2, r.dofs);
+});
+state.loads.forEach(function(r) {
+addLoadRow(r.x, r.y, r.z, r.Fx, r.Fy, r.Fz);
+});
+state.void_regions.forEach(function(r) {
+addVoidRegionRow(r.x_min, r.x_max, r.y_min, r.y_max, r.z_min, r.z_max, r.region_type);
+});
+toggleSupportMode();
+updateCutPlanes();
+toggleRenderModeUI();
+onStressSliderChange();
+restoringURLState = false;
+updateDomainVisuals();
+feedback.textContent = 'Shared model loaded. Ready to optimise.';
+return true;
+} catch (error) {
+restoringURLState = false;
+feedback.textContent = 'Could not load the shared model: ' + error.message;
+return false;
+}
+}
+
+function validatePositiveInputs() {
+['Lx', 'Ly', 'Lz', 'nx', 'ny', 'nz'].forEach(function(id) {
+var el = document.getElementById(id);
+if (el) {
+var val = parseFloat(el.value);
+if (isNaN(val) || val <= 0) {
+el.value = Math.abs(val) || (id.startsWith('n') ? 1 : 100);
+} else {
+el.value = Math.abs(val);
+}
+}
+});
+}
+
+function setVoidGizmosVisible(visible) {
+voidRegionGizmos.forEach(function(g) { g.visible = visible; });
+}
+
+function setBoundaryGizmosVisible(visible) {
+supportGizmos.forEach(function(g) { g.visible = visible; });
+forceArrows.forEach(function(a) { a.visible = visible; });
+}
+
+function toggleRenderModeUI() {
+var mode = document.getElementById('render_mode').value;
+var thresholdDiv = document.getElementById('stress_thresholds_div');
+thresholdDiv.style.display = (mode === 'ec3_stress' && currentVertices.length > 0) ? 'flex' : 'none';
+}
+
+function onStressSliderChange() {
+var compVal = parseFloat(document.getElementById('stress_comp_slider').value) || 0.01;
+var tensVal = parseFloat(document.getElementById('stress_tens_slider').value) || 0.01;
+document.getElementById('lbl_comp_val').innerText = "-" + format2DP(compVal) + " MPa";
+document.getElementById('lbl_tens_val').innerText = "+" + format2DP(tensVal) + " MPa";
+reRenderMesh();
+}
+
+function updateMaterialUI() {
+var matType = document.getElementById('mat_type').value;
+var stdDiv = document.getElementById('mat_standard_div');
+var masDiv = document.getElementById('mat_masonry_div');
+var stoneEDiv = document.getElementById('mat_stone_extra_div');
+var genDiv = document.getElementById('mat_generic_div');
+stdDiv.style.display = 'none'; masDiv.style.display = 'none';
+stoneEDiv.style.display = 'none'; genDiv.style.display = 'none';
+if (matType === 'steel' || matType === 'concrete' || matType === 'timber') {
+stdDiv.style.display = 'flex';
+var gradeSelect = document.getElementById('mat_grade');
+gradeSelect.innerHTML = '';
+var list = (matType === 'concrete') ? CONCRETE_GRADES : ((matType === 'steel') ? STEEL_GRADES : TIMBER_GRADES);
+list.forEach(function(g) {
+var opt = document.createElement('option');
+opt.value = g; opt.innerText = g;
+gradeSelect.appendChild(opt);
+});
+gradeSelect.value = (matType === 'concrete') ? 'C30/37' : ((matType === 'steel') ? 'S355' : 'C24');
+} else if (matType === 'masonry' || matType === 'stone') {
+masDiv.style.display = 'flex';
+var uSelect = document.getElementById('masonry_unit_select');
+var mSelect = document.getElementById('mortar_select');
+uSelect.innerHTML = ''; mSelect.innerHTML = '';
+var units = (matType === 'masonry') ? MASONRY_UNITS : STONE_UNITS;
+for (var key in units) {
+var opt = document.createElement('option'); opt.value = key; opt.innerText = key;
+uSelect.appendChild(opt);
+}
+for (var mkey in MORTAR_GRADES) {
+var mopt = document.createElement('option'); mopt.value = mkey; mopt.innerText = mkey;
+mSelect.appendChild(mopt);
+}
+syncCustomFb(); syncCustomFm();
+if (matType === 'stone') stoneEDiv.style.display = 'flex';
+} else if (matType === 'generic') {
+genDiv.style.display = 'flex';
+}
+}
+
+function syncCustomFb() {
+var matType = document.getElementById('mat_type').value;
+var key = document.getElementById('masonry_unit_select').value;
+if (matType === 'masonry') {
+document.getElementById('masonry_unit_fb').value = MASONRY_UNITS[key] || 20.0;
+} else if (matType === 'stone') {
+var data = STONE_UNITS[key];
+if (data) {
+document.getElementById('masonry_unit_fb').value = data.fb;
+document.getElementById('stone_E').value = data.E;
+}
+}
+}
+
+function syncCustomFm() {
+var key = document.getElementById('mortar_select').value;
+document.getElementById('mortar_fm').value = MORTAR_GRADES[key] || 6.0;
+}
+
+function setupCutPlaneSliders() {
+validatePositiveInputs();
+var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
+var Ly = Math.abs(parseFloat(document.getElementById('Ly').value)) || 300;
+var Lz = Math.abs(parseFloat(document.getElementById('Lz').value)) || 600;
+var sliderX = document.getElementById('cut_x');
+var sliderY = document.getElementById('cut_y');
+var sliderZ = document.getElementById('cut_z');
+sliderX.max = Lx; sliderX.value = Lx;
+sliderY.max = Ly; sliderY.value = Ly;
+sliderZ.max = Lz; sliderZ.value = Lz;
+updateCutPlanes();
+}
+
+function updateCutPlanes() {
+clipPlaneX.constant = parseFloat(document.getElementById('cut_x').value);
+clipPlaneY.constant = parseFloat(document.getElementById('cut_y').value);
+clipPlaneZ.constant = parseFloat(document.getElementById('cut_z').value);
+}
+
+function initThree() {
+var container = document.getElementById('viewport');
+scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
+camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 1000000);
+camera.position.set(7000, 3000, 4000);
+renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.localClippingEnabled = true;
+container.appendChild(renderer.domElement);
+controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+var keyLight = new THREE.DirectionalLight(0xffffff, 0.75);
+keyLight.position.set(5000, 8000, 4000);
+scene.add(keyLight);
+var fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
+fillLight.position.set(-3000, -2000, -2000);
+scene.add(fillLight);
+var grid = new THREE.GridHelper(500000, 500, 0x000000, 0xe0e0e0);
+grid.position.y = -1;
+scene.add(grid);
+axesScene = new THREE.Scene();
+axesCamera = new THREE.OrthographicCamera(-2.0, 2.0, 2.0, -2.0, 0.1, 10);
+axesCamera.position.set(0, 0, 5);
+axesCamera.lookAt(0, 0, 0);
+axesGroup = new THREE.Group();
+axesScene.add(axesGroup);
+var axisLen = 1.2;
+var axisMat = new THREE.LineBasicMaterial({ color: 0x000000 });
+
+function addAxisLine(to) {
+var geo = new THREE.BufferGeometry().setFromPoints([
+new THREE.Vector3(0, 0, 0), to
+]);
+axesGroup.add(new THREE.Line(geo, axisMat));
+}
+addAxisLine(new THREE.Vector3(axisLen, 0, 0));
+addAxisLine(new THREE.Vector3(0, axisLen, 0));
+addAxisLine(new THREE.Vector3(0, 0, axisLen));
+
+function makeAxisLabel(text) {
+var canvas = document.createElement('canvas');
+canvas.width = 128;
+canvas.height = 128;
+var ctx = canvas.getContext('2d');
+ctx.clearRect(0, 0, 128, 128);
+ctx.fillStyle = '#000000';
+ctx.font = 'bold 72px "Helvetica Neue", Helvetica, Arial, sans-serif';
+ctx.textAlign = 'center';
+ctx.textBaseline = 'middle';
+ctx.fillText(text, 64, 68);
+var tex = new THREE.CanvasTexture(canvas);
+tex.needsUpdate = true;
+var mat = new THREE.SpriteMaterial({
+map: tex,
+transparent: true,
+depthTest: false,
+depthWrite: false
+});
+var sprite = new THREE.Sprite(mat);
+sprite.scale.set(0.55, 0.55, 1);
+return sprite;
+}
+var lblX = makeAxisLabel('X');
+lblX.position.set(axisLen + 0.35, 0, 0);
+axesGroup.add(lblX);
+var lblZ = makeAxisLabel('Z');
+lblZ.position.set(0, axisLen + 0.35, 0);
+axesGroup.add(lblZ);
+var lblY = makeAxisLabel('Y');
+lblY.position.set(0, 0, axisLen + 0.35);
+axesGroup.add(lblY);
+window.addEventListener('resize', onWindowResize);
+updateMaterialUI();
+applyLoadPreset();
+setupCutPlaneSliders();
+animate();
+updateDomainVisuals();
+}
+
+function animate() {
+requestAnimationFrame(animate);
+controls.update();
+renderer.render(scene, camera);
+if (axesGroup && axesScene && axesCamera) {
+axesGroup.quaternion.copy(camera.quaternion).invert();
+var size = 110;
+var margin = 16;
+var container = document.getElementById('viewport');
+var w = container.clientWidth;
+var h = container.clientHeight;
+renderer.autoClear = false;
+renderer.clearDepth();
+renderer.setScissorTest(true);
+renderer.setScissor(margin, margin, size, size);
+renderer.setViewport(margin, margin, size, size);
+renderer.render(axesScene, axesCamera);
+renderer.setScissorTest(false);
+renderer.setViewport(0, 0, w, h);
+renderer.autoClear = true;
+}
+}
+
+function onWindowResize() {
+var container = document.getElementById('viewport');
+camera.aspect = container.clientWidth / container.clientHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(container.clientWidth, container.clientHeight);
+}
+
+function toggleSupportMode() {
+var mode = document.getElementById('support_mode').value;
+document.getElementById('preset_supports_div').style.display = (mode === 'preset') ? 'flex' : 'none';
+document.getElementById('custom_supports_div').style.display = (mode === 'custom') ? 'flex' : 'none';
+updateDomainVisuals();
+}
+
+function addSupportRow(x, y, z, dofs) {
+x = (x === undefined) ? 0 : x; y = (y === undefined) ? 150 : y;
+z = (z === undefined) ? 0 : z; dofs = (dofs === undefined) ? 'xyz' : dofs;
+var tbody = document.getElementById('support_table_body');
+var tr = document.createElement('tr');
+tr.innerHTML =
+'<td><input type="number" class="sp-x" value="' + x + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="number" class="sp-y" value="' + y + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="number" class="sp-z" value="' + z + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="text" class="sp-dofs" value="' + dofs + '" oninput="updateDomainVisuals()"></td>' +
+'<td><button class="btn-del" onclick="deleteRow(this)">×</button></td>';
+tbody.appendChild(tr);
+updateDomainVisuals();
+}
+
+function addLineSupportRow(x1, y1, z1, x2, y2, z2, dofs) {
+var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
+x1 = (x1 === undefined) ? 0 : x1; y1 = (y1 === undefined) ? 0 : y1; z1 = (z1 === undefined) ? 0 : z1;
+x2 = (x2 === undefined) ? Lx : x2; y2 = (y2 === undefined) ? 0 : y2; z2 = (z2 === undefined) ? 0 : z2;
+dofs = (dofs === undefined) ? 'xyz' : dofs;
+var tbody = document.getElementById('line_support_table_body');
+var tr = document.createElement('tr');
+tr.innerHTML =
+'<td><input type="number" class="lsp-x1" value="' + x1 + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="number" class="lsp-y1" value="' + y1 + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="number" class="lsp-z1" value="' + z1 + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="number" class="lsp-x2" value="' + x2 + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="number" class="lsp-y2" value="' + y2 + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="number" class="lsp-z2" value="' + z2 + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="text" class="lsp-dofs" value="' + dofs + '" oninput="updateDomainVisuals()"></td>' +
+'<td><button class="btn-del" onclick="deleteRow(this)">×</button></td>';
+tbody.appendChild(tr);
+updateDomainVisuals();
+}
+
+function addLoadRow(x, y, z, Fx, Fy, Fz) {
+x = (x === undefined) ? 1200 : x; y = (y === undefined) ? 150 : y; z = (z === undefined) ? 600 : z;
+Fx = (Fx === undefined) ? 0 : Fx; Fy = (Fy === undefined) ? 0 : Fy; Fz = (Fz === undefined) ? -12.5 : Fz;
+var tbody = document.getElementById('load_table_body');
+var tr = document.createElement('tr');
+tr.innerHTML =
+'<td><input type="number" class="ld-x" value="' + x + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="number" class="ld-y" value="' + y + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="number" class="ld-z" value="' + z + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="number" class="ld-fx" value="' + Fx + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="number" class="ld-fy" value="' + Fy + '" oninput="updateDomainVisuals()"></td>' +
+'<td><input type="number" class="ld-fz" value="' + Fz + '" oninput="updateDomainVisuals()"></td>' +
+'<td><button class="btn-del" onclick="deleteRow(this)">×</button></td>';
+tbody.appendChild(tr);
+updateDomainVisuals();
+}
+
+function deleteRow(btn) {
+var row = btn.parentNode.parentNode;
+row.parentNode.removeChild(row);
+updateDomainVisuals();
+}
+
+function clearAllSupports() {
+var tbody = document.getElementById('support_table_body');
+tbody.innerHTML = '';
+updateDomainVisuals();
+}
+
+function clearAllLineSupports() {
+var tbody = document.getElementById('line_support_table_body');
+tbody.innerHTML = '';
+updateDomainVisuals();
+}
+
+function clearAllLoads() {
+var tbody = document.getElementById('load_table_body');
+tbody.innerHTML = '';
+document.getElementById('load_preset').value = 'custom';
+updateDomainVisuals();
+}
+
+function addVoidRegionRow(xMin, xMax, yMin, yMax, zMin, zMax, regionType) {
+var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
+var Ly = Math.abs(parseFloat(document.getElementById('Ly').value)) || 300;
+var Lz = Math.abs(parseFloat(document.getElementById('Lz').value)) || 600;
+xMin = (xMin === undefined) ? Math.round(Lx * 0.4) : xMin;
+xMax = (xMax === undefined) ? Math.round(Lx * 0.6) : xMax;
+yMin = (yMin === undefined) ? 0 : yMin;
+yMax = (yMax === undefined) ? Ly : yMax;
+zMin = (zMin === undefined) ? 0 : zMin;
+zMax = (zMax === undefined) ? Math.round(Lz * 0.3) : zMax;
+regionType = (regionType === undefined) ? 'void' : regionType;
+var container = document.getElementById('void_region_list');
+var card = document.createElement('div');
+card.className = 'void-region-card';
+card.style.cssText = 'background: #f9f9f9; border: 1px solid #e5e5e5; padding: 8px; display: flex; flex-direction: column; gap: 6px; position: relative;';
+card.innerHTML =
+'<div style="display: flex; justify-content: space-between; align-items: center;">' +
+'<select class="vr-type" onchange="updateDomainVisuals()" style="font-size: 0.72rem; font-weight: bold; padding: 2px 4px; width: 130px;">' +
+'<option value="void"' + (regionType === 'void' ? ' selected' : '') + '>Void (Keep-Out)</option>' +
+'<option value="solid"' + (regionType === 'solid' ? ' selected' : '') + '>Forced Solid</option>' +
+'</select>' +
+'<button class="btn-del" onclick="deleteVoidCard(this)" style="font-size: 0.85rem; padding: 0 4px;">×</button>' +
+'</div>' +
+'<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;">' +
+'<div><label style="font-size: 0.62rem; color: #666; display:block;">X [Min, Max]</label>' +
+'<div style="display: flex; gap: 2px;">' +
+'<input type="number" class="vr-xmin" value="' + xMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+'<input type="number" class="vr-xmax" value="' + xMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+'</div>' +
+'</div>' +
+'<div><label style="font-size: 0.62rem; color: #666; display:block;">Y [Min, Max]</label>' +
+'<div style="display: flex; gap: 2px;">' +
+'<input type="number" class="vr-ymin" value="' + yMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+'<input type="number" class="vr-ymax" value="' + yMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+'</div>' +
+'</div>' +
+'<div><label style="font-size: 0.62rem; color: #666; display:block;">Z [Min, Max]</label>' +
+'<div style="display: flex; gap: 2px;">' +
+'<input type="number" class="vr-zmin" value="' + zMin + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+'<input type="number" class="vr-zmax" value="' + zMax + '" oninput="updateDomainVisuals()" style="width: 50%; font-size: 0.72rem; padding: 2px 4px; min-width: 0;">' +
+'</div>' +
+'</div>' +
+'</div>';
+container.appendChild(card);
+updateDomainVisuals();
+}
+
+function deleteVoidCard(btn) {
+var card = btn.closest('.void-region-card');
+if (card) card.parentNode.removeChild(card);
+updateDomainVisuals();
+}
+
+function clearAllVoidRegions() {
+var container = document.getElementById('void_region_list');
+container.innerHTML = '';
+updateDomainVisuals();
+}
+
+function getVoidRegionArrayData() {
+var cards = document.querySelectorAll('#void_region_list .void-region-card');
+var regions = [];
+cards.forEach(function(c) {
+regions.push({
+x_min: parseFloat(c.querySelector('.vr-xmin').value) || 0,
+x_max: parseFloat(c.querySelector('.vr-xmax').value) || 0,
+y_min: parseFloat(c.querySelector('.vr-ymin').value) || 0,
+y_max: parseFloat(c.querySelector('.vr-ymax').value) || 0,
+z_min: parseFloat(c.querySelector('.vr-zmin').value) || 0,
+z_max: parseFloat(c.querySelector('.vr-zmax').value) || 0,
+region_type: c.querySelector('.vr-type').value || 'void'
+});
+});
+return regions;
+}
+
+function applyLoadPreset() {
+var preset = document.getElementById('load_preset').value;
+var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
+var Ly = Math.abs(parseFloat(document.getElementById('Ly').value)) || 300;
+var Lz = Math.abs(parseFloat(document.getElementById('Lz').value)) || 600;
+var tbody = document.getElementById('load_table_body');
+if (preset === 'top_udl') {
+tbody.innerHTML = '';
+var num_x = 4, num_y = 2;
+var load_per_point = -100.0 / (num_x * num_y);
+for (var ix = 1; ix <= num_x; ix++) {
+for (var iy = 1; iy <= num_y; iy++) {
+addLoadRow((ix / (num_x + 1)) * Lx, (iy / (num_y + 1)) * Ly, Lz, 0, 0, load_per_point);
+}
+}
+} else if (preset === 'tip_center') {
+tbody.innerHTML = '';
+addLoadRow(Lx / 2.0, Ly / 2.0, Lz, 0, 0, -100);
+} else if (preset === 'third_points') {
+tbody.innerHTML = '';
+addLoadRow(Lx / 3.0, Ly / 2.0, Lz, 0, 0, -50);
+addLoadRow((2 * Lx) / 3.0, Ly / 2.0, Lz, 0, 0, -50);
+}
+updateDomainVisuals();
+}
+
+function getLoadArrayData() {
+var rows = document.querySelectorAll('#load_table_body tr');
+var loads = [];
+rows.forEach(function(r) {
+loads.push({
+x: parseFloat(r.querySelector('.ld-x').value) || 0,
+y: parseFloat(r.querySelector('.ld-y').value) || 0,
+z: parseFloat(r.querySelector('.ld-z').value) || 0,
+Fx: parseFloat(r.querySelector('.ld-fx').value) || 0,
+Fy: parseFloat(r.querySelector('.ld-fy').value) || 0,
+Fz: parseFloat(r.querySelector('.ld-fz').value) || 0
+});
+});
+return loads;
+}
+
+function getPointSupportArrayData() {
+var rows = document.querySelectorAll('#support_table_body tr');
+var supports = [];
+rows.forEach(function(r) {
+supports.push({
+x: parseFloat(r.querySelector('.sp-x').value) || 0,
+y: parseFloat(r.querySelector('.sp-y').value) || 0,
+z: parseFloat(r.querySelector('.sp-z').value) || 0,
+dofs: (r.querySelector('.sp-dofs').value || 'xyz').toLowerCase()
+});
+});
+return supports;
+}
+
+function getLineSupportArrayData() {
+var rows = document.querySelectorAll('#line_support_table_body tr');
+var lineSupports = [];
+rows.forEach(function(r) {
+lineSupports.push({
+x1: parseFloat(r.querySelector('.lsp-x1').value) || 0,
+y1: parseFloat(r.querySelector('.lsp-y1').value) || 0,
+z1: parseFloat(r.querySelector('.lsp-z1').value) || 0,
+x2: parseFloat(r.querySelector('.lsp-x2').value) || 0,
+y2: parseFloat(r.querySelector('.lsp-y2').value) || 0,
+z2: parseFloat(r.querySelector('.lsp-z2').value) || 0,
+dofs: (r.querySelector('.lsp-dofs').value || 'xyz').toLowerCase()
+});
+});
+return lineSupports;
+}
+
+function updateDomainVisuals() {
+if (restoringURLState || !scene) return;
+validatePositiveInputs();
+var Lx = Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000;
+var Ly = Math.abs(parseFloat(document.getElementById('Ly').value)) || 300;
+var Lz = Math.abs(parseFloat(document.getElementById('Lz').value)) || 600;
+var nz = Math.abs(parseInt(document.getElementById('nz').value)) || 12;
+if (domainBox) scene.remove(domainBox);
+var boxGeo = new THREE.BoxGeometry(Lx, Lz, Ly);
+var edges = new THREE.EdgesGeometry(boxGeo);
+domainBox = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x999999, linewidth: 1 }));
+domainBox.position.set(Lx / 2.0, Lz / 2.0, Ly / 2.0);
+scene.add(domainBox);
+supportGizmos.forEach(function(g) { scene.remove(g); });
+supportGizmos = [];
+var dz = Lz / nz;
+var size = Math.min(180.0, Math.max(80.0, dz * 1.5));
+var supMode = document.getElementById('support_mode').value;
+var pinMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, roughness: 0.3 });
+var rollerMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, roughness: 0.3 });
+if (supMode === 'preset') {
+var preset = document.getElementById('support_preset').value;
+if (preset === 'cantilever') {
+var wallGeo = new THREE.BoxGeometry(size * 0.4, Lz, Ly);
+var wallMesh = new THREE.Mesh(wallGeo, pinMat);
+wallMesh.position.set(-size * 0.2, Lz / 2.0, Ly / 2.0);
+scene.add(wallMesh);
+supportGizmos.push(wallMesh);
+} else if (preset === 'four_corners') {
+var cornerGeo = new THREE.ConeGeometry(size * 0.5, size, 4);
+var corners = [[0, 0], [Lx, 0], [0, Ly], [Lx, Ly]];
+corners.forEach(function(pt) {
+var cMesh = new THREE.Mesh(cornerGeo, pinMat);
+cMesh.position.set(pt[0], -size * 0.5, pt[1]);
+scene.add(cMesh);
+supportGizmos.push(cMesh);
+});
+} else if (preset === 'all_edges') {
+var edgeT = Math.max(size * 0.2, Math.min(Lx, Ly) * 0.02);
+var edgeH = size * 0.3;
+var edgeGeoX = new THREE.BoxGeometry(Lx, edgeH, edgeT);
+var edgeGeoY = new THREE.BoxGeometry(edgeT, edgeH, Ly);
+var edgeFront = new THREE.Mesh(edgeGeoX, pinMat);
+edgeFront.position.set(Lx / 2.0, -edgeH * 0.5, edgeT / 2.0);
+scene.add(edgeFront); supportGizmos.push(edgeFront);
+var edgeBack = new THREE.Mesh(edgeGeoX, pinMat);
+edgeBack.position.set(Lx / 2.0, -edgeH * 0.5, Ly - edgeT / 2.0);
+scene.add(edgeBack); supportGizmos.push(edgeBack);
+var edgeLeft = new THREE.Mesh(edgeGeoY, pinMat);
+edgeLeft.position.set(edgeT / 2.0, -edgeH * 0.5, Ly / 2.0);
+scene.add(edgeLeft); supportGizmos.push(edgeLeft);
+var edgeRight = new THREE.Mesh(edgeGeoY, pinMat);
+edgeRight.position.set(Lx - edgeT / 2.0, -edgeH * 0.5, Ly / 2.0);
+scene.add(edgeRight); supportGizmos.push(edgeRight);
+}
+}
+if (supportBoxVisual) scene.remove(supportBoxVisual);
+if (supMode === 'custom') {
+var xMin = parseFloat(document.getElementById('sup_x_min').value) || 0;
+var xMax = parseFloat(document.getElementById('sup_x_max').value) || 0;
+var yMin = parseFloat(document.getElementById('sup_y_min').value) || 0;
+var yMax = parseFloat(document.getElementById('sup_y_max').value) || 0;
+var zMin = parseFloat(document.getElementById('sup_z_min').value) || 0;
+var zMax = parseFloat(document.getElementById('sup_z_max').value) || 0;
+var dx = Math.max(xMax - xMin, size * 0.5);
+var dy = Math.max(yMax - yMin, size * 0.5);
+var dz_box = Math.max(zMax - zMin, size * 0.5);
+var supGeo = new THREE.BoxGeometry(dx, dz_box, dy);
+var supMesh = new THREE.Mesh(supGeo, pinMat);
+supMesh.position.set(xMin + dx / 2.0, zMin + dz_box / 2.0, yMin + dy / 2.0);
+scene.add(supMesh);
+supportGizmos.push(supMesh);
+}
+var pointSups = getPointSupportArrayData();
+var ptPinGeo = new THREE.ConeGeometry(size * 0.4, size * 0.7, 4);
+var ptRollerGeo = new THREE.CylinderGeometry(size * 0.2, size * 0.2, size * 0.7, 16);
+pointSups.forEach(function(ps) {
+var isPin = ps.dofs.includes('x') && ps.dofs.includes('y') && ps.dofs.includes('z');
+var ptMesh;
+if (isPin) {
+ptMesh = new THREE.Mesh(ptPinGeo, pinMat);
+ptMesh.position.set(ps.x, ps.z - size * 0.35, ps.y);
+} else {
+ptMesh = new THREE.Mesh(ptRollerGeo, rollerMat);
+ptMesh.rotation.x = Math.PI / 2;
+ptMesh.position.set(ps.x, ps.z - size * 0.2, ps.y);
+}
+scene.add(ptMesh);
+supportGizmos.push(ptMesh);
+});
+var lineSups = getLineSupportArrayData();
+lineSups.forEach(function(ls) {
+var p1 = new THREE.Vector3(ls.x1, ls.z1, ls.y1);
+var p2 = new THREE.Vector3(ls.x2, ls.z2, ls.y2);
+var lineVec = new THREE.Vector3().subVectors(p2, p1);
+var len = lineVec.length();
+if (len > 1e-3) {
+var isPin = ls.dofs.includes('x') && ls.dofs.includes('y') && ls.dofs.includes('z');
+var mat = isPin ? pinMat : rollerMat;
+var cylGeo = new THREE.CylinderGeometry(size * 0.15, size * 0.15, len, 12);
+var cylMesh = new THREE.Mesh(cylGeo, mat);
+var mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+cylMesh.position.copy(mid);
+var axis = new THREE.Vector3(0, 1, 0);
+cylMesh.quaternion.setFromUnitVectors(axis, lineVec.clone().normalize());
+scene.add(cylMesh);
+supportGizmos.push(cylMesh);
+}
+});
+forceArrows.forEach(function(a) { scene.remove(a); });
+forceArrows = [];
+getLoadArrayData().forEach(function(ld) {
+var dirVector = new THREE.Vector3(ld.Fx, ld.Fz, ld.Fy);
+var forceMag = dirVector.length();
+if (forceMag > 1e-3) {
+dirVector.normalize();
+var origin = new THREE.Vector3(ld.x, ld.z, ld.y);
+var arrowLength = Math.min(Math.max(forceMag * 1.2, size), size * 2.5);
+var arrow = new THREE.ArrowHelper(dirVector, origin, arrowLength, 0xcc0000, arrowLength * 0.25, arrowLength * 0.12);
+scene.add(arrow);
+forceArrows.push(arrow);
+}
+});
+voidRegionGizmos.forEach(function(g) { scene.remove(g); });
+voidRegionGizmos = [];
+var voidFillMat = new THREE.MeshStandardMaterial({
+color: 0xff9900, roughness: 0.6, transparent: true, opacity: 0.28,
+side: THREE.DoubleSide, depthWrite: false
+});
+var solidFillMat = new THREE.MeshStandardMaterial({
+color: 0x2255ee, roughness: 0.6, transparent: true, opacity: 0.28,
+side: THREE.DoubleSide, depthWrite: false
+});
+getVoidRegionArrayData().forEach(function(vr) {
+var dx = Math.max(vr.x_max - vr.x_min, 1.0);
+var dy = Math.max(vr.y_max - vr.y_min, 1.0);
+var dz_box = Math.max(vr.z_max - vr.z_min, 1.0);
+var regGeo = new THREE.BoxGeometry(dx, dz_box, dy);
+var fillMat = (vr.region_type === 'solid') ? solidFillMat : voidFillMat;
+var regMesh = new THREE.Mesh(regGeo, fillMat);
+regMesh.position.set(vr.x_min + dx / 2.0, vr.z_min + dz_box / 2.0, vr.y_min + dy / 2.0);
+scene.add(regMesh);
+voidRegionGizmos.push(regMesh);
+var regEdges = new THREE.EdgesGeometry(regGeo);
+var edgeColor = (vr.region_type === 'solid') ? 0x2255ee : 0xcc6600;
+var regWire = new THREE.LineSegments(regEdges, new THREE.LineBasicMaterial({ color: edgeColor }));
+regWire.position.copy(regMesh.position);
+scene.add(regWire);
+voidRegionGizmos.push(regWire);
+});
+setVoidGizmosVisible(true);
+setBoundaryGizmosVisible(true);
+}
+
+function initWasmEngine() {
+worker = new Worker('solver_worker.js?cb=' + Date.now());
+worker.onmessage = handleWorkerMessage;
+worker.postMessage({ action: 'init' });
+}
+
+function handleWorkerMessage(e) {
+var data = e.data;
+var status = document.getElementById('status');
+var btnExec = document.getElementById('btn-exec');
+var btnStop = document.getElementById('btn-stop');
+var actionsGroup = document.getElementById('results-actions-group');
+if (data.status === 'log') {
+status.style.color = "#000000";
+status.style.borderLeftColor = "#000000";
+status.innerText = data.message;
+} else if (data.status === 'ready') {
+engineReady = true;
+status.style.color = "#000000";
+status.style.borderLeftColor = "#000000";
+status.innerText = "Wasm Engine Ready. Define problem parameters.";
+btnExec.disabled = false;
+btnExec.innerText = "Execute Optimisation";
+} else if (data.status === 'running') {
+status.style.color = "#000000";
+status.style.borderLeftColor = "#000000";
+var phase = data.phase || "Solving";
+var iterTxt = (data.total_iter ? (" — Iteration " + data.current_iter + " / " + data.total_iter) : "");
+var speedTxt = data.last_iter_ms ? (" (" + data.last_iter_ms + " ms/iter)") : "";
+status.innerText = phase + iterTxt + speedTxt;
+} else if (data.status === 'completed') {
+btnExec.disabled = false;
+btnExec.innerText = "Execute Optimisation";
+btnStop.style.display = 'none';
+actionsGroup.style.display = 'flex';
+currentVertices = data.data.vertices;
+currentFaces = data.data.faces;
+currentStressesMPa = data.data.stresses_mpa;
+currentDeflectionsMM = data.data.deflections_mm || [];
+currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_tens : Math.max(0.0, ...currentStressesMPa);
+currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : Math.min(0.0, ...currentStressesMPa);
+currentUMax = data.data.u_max;
+currentFk = data.data.f_k || 30.0;
+var compSlider = document.getElementById('stress_comp_slider');
+var tensSlider = document.getElementById('stress_tens_slider');
+var maxCompAbs = Math.ceil(Math.abs(currentSigmaMaxComp) * 100) / 100;
+compSlider.max = maxCompAbs > 0.01 ? maxCompAbs : 0.01;
+compSlider.value = compSlider.max;
+var maxTensRounded = Math.ceil(currentSigmaMaxTens * 100) / 100;
+tensSlider.max = maxTensRounded > 0.01 ? maxTensRounded : 0.01;
+tensSlider.value = tensSlider.max;
+onStressSliderChange();
+status.style.color = "#000000";
+status.style.borderLeftColor = "#000000";
+status.innerText = "Optimisation complete in " + (data.data.solve_time_s || "?") + "s [" +
+(data.data.material_name || "") + "]. Rendering...";
+toggleRenderModeUI();
+reRenderMesh();
+} else if (data.status === 'error') {
+btnExec.disabled = false;
+btnExec.innerText = "Execute Optimisation";
+btnStop.style.display = 'none';
+status.style.color = "#cc0000";
+status.style.borderLeftColor = "#cc0000";
+status.innerText = "Solver Error: " + data.message;
+}
+}
+
+function startOptimisation() {
+if (!engineReady) return;
+validatePositiveInputs();
+var status = document.getElementById('status');
+status.style.color = "#000000";
+status.style.borderLeftColor = "#000000";
+status.innerText = "Dispatching FE solver to Wasm worker...";
+document.getElementById('btn-exec').disabled = true;
+document.getElementById('btn-stop').style.display = 'block';
+document.getElementById('results-actions-group').style.display = 'none';
+var dofs = '';
+if (document.getElementById('dof_x').checked) dofs += 'x';
+if (document.getElementById('dof_y').checked) dofs += 'y';
+if (document.getElementById('dof_z').checked) dofs += 'z';
+var payload = {
+material_type: document.getElementById('mat_type').value,
+material_grade: document.getElementById('mat_grade').value,
+masonry_unit_fb: parseFloat(document.getElementById('masonry_unit_fb').value) || 20.0,
+mortar_fm: parseFloat(document.getElementById('mortar_fm').value) || 6.0,
+stone_E: parseFloat(document.getElementById('stone_E').value) || 35000.0,
+custom_E: parseFloat(document.getElementById('custom_E').value) || 33000.0,
+custom_nu: parseFloat(document.getElementById('custom_nu').value) || 0.20,
+custom_fk: parseFloat(document.getElementById('custom_fk').value) || 30.0,
+custom_gamma_kn_m3: Number.isFinite(parseFloat(document.getElementById('custom_gamma').value)) ? parseFloat(document.getElementById('custom_gamma').value) : 25.0,
+Lx: Math.abs(parseFloat(document.getElementById('Lx').value)) || 6000,
+Ly: Math.abs(parseFloat(document.getElementById('Ly').value)) || 300,
+Lz: Math.abs(parseFloat(document.getElementById('Lz').value)) || 600,
+nx: Math.abs(parseInt(document.getElementById('nx').value)) || 36,
+ny: Math.abs(parseInt(document.getElementById('ny').value)) || 9,
+nz: Math.abs(parseInt(document.getElementById('nz').value)) || 12,
+volfrac: parseFloat(document.getElementById('volfrac').value),
+support_mode: document.getElementById('support_mode').value,
+support_preset: document.getElementById('support_preset').value,
+sup_x_min: parseFloat(document.getElementById('sup_x_min').value),
+sup_x_max: parseFloat(document.getElementById('sup_x_max').value),
+sup_y_min: parseFloat(document.getElementById('sup_y_min').value),
+sup_y_max: parseFloat(document.getElementById('sup_y_max').value),
+sup_z_min: parseFloat(document.getElementById('sup_z_min').value),
+sup_z_max: parseFloat(document.getElementById('sup_z_max').value),
+sup_dofs: dofs,
+point_supports: getPointSupportArrayData(),
+line_supports: getLineSupportArrayData(),
+load_preset: document.getElementById('load_preset').value,
+loads: getLoadArrayData(),
+void_regions: getVoidRegionArrayData(),
+iterations: Math.abs(parseInt(document.getElementById('iterations').value)) || 20,
+include_self_weight: document.getElementById('self_weight_toggle').checked
+};
+worker.postMessage({ action: 'solve', payload: payload });
+}
+
+function stopOptimisation() {
+var status = document.getElementById('status');
+status.style.color = "#cc0000";
+status.style.borderLeftColor = "#cc0000";
+status.innerText = "Terminating and reloading Wasm engine...";
+document.getElementById('btn-stop').style.display = 'none';
+document.getElementById('btn-exec').disabled = true;
+document.getElementById('btn-exec').innerText = "Loading Wasm Engine…";
+document.getElementById('results-actions-group').style.display = 'none';
+engineReady = false;
+if (worker) worker.terminate();
+initWasmEngine();
+}
+
+function clearResults() {
+currentVertices = [];
+currentFaces = [];
+currentStressesMPa = [];
+currentDeflectionsMM = [];
+if (mesh) {
+scene.remove(mesh);
+mesh.geometry.dispose();
+mesh.material.dispose();
+mesh = null;
+}
+document.getElementById('legend').style.display = 'none';
+document.getElementById('results-actions-group').style.display = 'none';
+document.getElementById('stress_thresholds_div').style.display = 'none';
+var status = document.getElementById('status');
+status.style.color = "#000000";
+status.style.borderLeftColor = "#000000";
+status.innerText = "Results cleared. Ready to define parameters.";
+updateDomainVisuals();
+}
+
+function format2DP(val) {
+return Number(val).toFixed(2);
+}
+
+function formatMPa(val) {
+return format2DP(val) + " MPa";
+}
+
+function formatMM(val) {
+return format2DP(val) + " mm";
+}
+
+function updateLegendLabels(isDeflectionMode) {
+var legendTitle = document.getElementById('legend-title');
+if (isDeflectionMode) {
+legendTitle.innerText = "Displacement Map (mm)";
+document.getElementById('lbl-100').innerText = formatMM(currentUMax) + " (Max Uz)";
+document.getElementById('lbl-075').innerText = formatMM(currentUMax * 0.75);
+document.getElementById('lbl-050').innerText = formatMM(currentUMax * 0.50);
+document.getElementById('lbl-025').innerText = formatMM(currentUMax * 0.25);
+document.getElementById('lbl-000').innerText = "0.00 mm";
+} else {
+var activeMaxComp = -Math.abs(parseFloat(document.getElementById('stress_comp_slider').value) || Math.abs(currentSigmaMaxComp));
+var activeMaxTens = parseFloat(document.getElementById('stress_tens_slider').value) || currentSigmaMaxTens;
+legendTitle.innerText = "Stress Map (MPa)";
+document.getElementById('lbl-100').innerText = "+" + formatMPa(activeMaxTens);
+document.getElementById('lbl-075').innerText = "+" + formatMPa(activeMaxTens * 0.50);
+document.getElementById('lbl-050').innerText = "0.00 MPa";
+document.getElementById('lbl-025').innerText = formatMPa(activeMaxComp * 0.50);
+document.getElementById('lbl-000').innerText = formatMPa(activeMaxComp);
+}
+}
+
+function reRenderMesh() {
+var legend = document.getElementById('legend');
+var mode = document.getElementById('render_mode').value;
+var isDeflectionMode = (mode === 'deflection');
+if (!currentVertices.length || !currentFaces.length) return;
+setVoidGizmosVisible(false);
+setBoundaryGizmosVisible(true);
+if (mode === 'ec3_stress' || mode === 'deflection') {
+updateLegendLabels(isDeflectionMode);
+legend.style.display = 'flex';
+} else {
+legend.style.display = 'none';
+}
+if (mesh) {
+scene.remove(mesh);
+mesh.geometry.dispose();
+mesh.material.dispose();
+}
+var geometry = new THREE.BufferGeometry();
+var positions = new Float32Array(currentVertices.length * 3);
+var indices = new Uint32Array(currentFaces.length * 3);
+var colors = new Float32Array(currentVertices.length * 3);
+var activeMaxComp = -Math.abs(parseFloat(document.getElementById('stress_comp_slider').value) || Math.abs(currentSigmaMaxComp));
+var activeMaxTens = parseFloat(document.getElementById('stress_tens_slider').value) || currentSigmaMaxTens;
+
+var colorScaleSignedAsymmetric = function(val, maxTens, minComp) {
+if (val > maxTens || val < minComp) {
+return new THREE.Color(0x808080);
+}
+var h;
+if (val >= 0) {
+var normTens = (maxTens > 1e-6) ? Math.min(val / maxTens, 1.0) : 0.0;
+h = (1.0 - normTens) * 120.0 / 360.0;
+} else {
+var normComp = (Math.abs(minComp) > 1e-6) ? Math.min(Math.abs(val / minComp), 1.0) : 0.0;
+h = (120.0 + normComp * 120.0) / 360.0;
+}
+var c = new THREE.Color();
+c.setHSL(h, 0.85, 0.45);
+return c;
+};
+
+var colorScaleUnsigned = function(val, maxVal) {
+var norm = (maxVal > 1e-6) ? Math.min(Math.max(val / maxVal, 0.0), 1.0) : 0.0;
+var h = (1.0 - norm) * 240.0 / 360.0;
+var c = new THREE.Color();
+c.setHSL(h, 0.85, 0.45);
+return c;
+};
+
+var activeFieldArray = isDeflectionMode ? currentDeflectionsMM : currentStressesMPa;
+var hasFieldData = activeFieldArray && activeFieldArray.length === currentVertices.length;
+currentVertices.forEach(function(p, i) {
+positions.set([p[0], p[2], p[1]], i * 3);
+if (hasFieldData && (mode === 'ec3_stress' || isDeflectionMode)) {
+var value = activeFieldArray[i] || 0.0;
+var c = isDeflectionMode ? colorScaleUnsigned(value, currentUMax) :
+colorScaleSignedAsymmetric(value, activeMaxTens, activeMaxComp);
+colors.set([c.r, c.g, c.b], i * 3);
+}
+});
+currentFaces.forEach(function(f, i) {
+// Swapping Y/Z reflects the coordinates, so reverse triangle winding.
+indices.set([f[0], f[2], f[1]], i * 3);
+});
+geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+geometry.computeVertexNormals();
+geometry.computeBoundingSphere();
+var mapped = hasFieldData && (mode === 'ec3_stress' || isDeflectionMode);
+if (mapped) geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+var material = new THREE.MeshPhysicalMaterial({
+color: mapped ? 0xffffff : 0x808080,
+vertexColors: mapped,
+roughness: mapped ? 0.40 : 0.18,
+metalness: mapped ? 0.10 : 0.65,
+clearcoat: mapped ? 0.10 : 0.8,
+clearcoatRoughness: 0.12,
+side: THREE.DoubleSide,
+clippingPlanes: [clipPlaneX, clipPlaneY, clipPlaneZ],
+clipShadows: true
+});
+mesh = new THREE.Mesh(geometry, material);
+scene.add(mesh);
+}
+
+function exportSTL() {
+if (!currentVertices.length || !currentFaces.length) {
+alert("No solved topology geometry available for export.");
+return;
+}
+var stl = "solid DBSW_Optimised_Mesh\n";
+currentFaces.forEach(function(f) {
+var p1 = currentVertices[f[0]], p2 = currentVertices[f[1]], p3 = currentVertices[f[2]];
+var ux = p2[0]-p1[0], uy = p2[1]-p1[1], uz = p2[2]-p1[2];
+var vx = p3[0]-p1[0], vy = p3[1]-p1[1], vz = p3[2]-p1[2];
+var nx = uy*vz - uz*vy, ny = uz*vx - ux*vz, nz = ux*vy - uy*vx;
+var nlen = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1.0;
+nx /= nlen; ny /= nlen; nz /= nlen;
+stl += "  facet normal " + nx + " " + ny + " " + nz + "\n    outer loop\n";
+stl += "      vertex " + p1[0] + " " + p1[1] + " " + p1[2] + "\n";
+stl += "      vertex " + p2[0] + " " + p2[1] + " " + p2[2] + "\n";
+stl += "      vertex " + p3[0] + " " + p3[1] + " " + p3[2] + "\n";
+stl += "    endloop\n  endfacet\n";
+});
+stl += "endsolid DBSW_Optimised_Mesh\n";
+var blob = new Blob([stl], { type: 'text/plain' });
+var link = document.createElement('a');
+link.href = URL.createObjectURL(blob);
+link.download = 'DBSW_Topology_Mesh.stl';
+link.click();
+}
+
+function toggleSidebar() {
+var collapsed = document.body.classList.toggle('sidebar-collapsed');
+var toggle = document.getElementById('sidebar-toggle');
+if (toggle) {
+toggle.setAttribute('aria-expanded', String(!collapsed));
+toggle.setAttribute('aria-label', collapsed ? 'Expand control panel' : 'Collapse control panel');
+toggle.setAttribute('title', collapsed ? 'Expand control panel' : 'Collapse control panel');
+}
+window.setTimeout(function() {
+if (typeof onWindowResize === 'function') {
+onWindowResize();
+}
+}, 300);
+}
+
+function initialiseSidebarToggle() {
+var toggle = document.getElementById('sidebar-toggle');
+if (!toggle) return;
+toggle.addEventListener('click', toggleSidebar);
+}
+
+function initialiseApplication() {
+initialiseSidebarToggle();
+initThree();
+loadStateFromURL();
+initWasmEngine();
+}
+
+if (document.readyState === 'loading') {
+document.addEventListener('DOMContentLoaded', initialiseApplication, { once: true });
+} else {
+initialiseApplication();
+}
 </script>
-
 </body>
 </html>
