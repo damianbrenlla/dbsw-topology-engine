@@ -492,6 +492,42 @@ cleaner, more resolved topology at the cost of longer solve time.
 Include Self-Weight (Dead Load)
 </label>
 </div>
+
+<details id="advanced-simp-details" style="margin-top: 6px; border: 1px solid #e5e5e5; padding: 8px 10px; background: #fafafa;">
+<summary style="cursor: pointer; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #000;">Advanced SIMP Parameters</summary>
+<div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+<div class="control-group">
+<label style="font-size: 0.72rem;">Penalisation (start → final, step)</label>
+<div style="display: flex; gap: 4px;">
+<input type="number" step="0.1" id="penal_init" value="1.0" min="1.0" max="5.0" style="width: 33%;" title="Starting penalisation power">
+<input type="number" step="0.1" id="penal_final" value="3.0" min="1.0" max="5.0" style="width: 33%;" title="Final penalisation power">
+<input type="number" step="0.1" id="penal_step" value="0.5" min="0.1" max="2.0" style="width: 33%;" title="Step size for continuation">
+</div>
+</div>
+<div class="control-group">
+<label style="font-size: 0.72rem;">Filter radius r<sub>min</sub> (mm)</label>
+<input type="number" id="rmin_mm" value="150" min="1" step="5" title="Sensitivity filter radius / minimum member size">
+</div>
+<div class="control-group">
+<label style="font-size: 0.72rem;">OC move limit</label>
+<input type="number" step="0.01" id="move_limit" value="0.2" min="0.01" max="0.5" title="Max density change per iteration">
+</div>
+<div class="control-group">
+<label style="font-size: 0.72rem;">No-tension weight</label>
+<input type="number" step="0.5" id="notension_weight" value="3.0" min="0" max="20" title="Extra penalty on tensile zones (concrete / masonry / stone)">
+</div>
+<div class="checkbox-group">
+<label>
+<input type="checkbox" id="record_density_history" checked>
+Record density history (enables evolution scrubber)
+</label>
+</div>
+<p style="font-size: 0.68rem; color: #888888; line-height: 1.4; margin: 0;">
+These control the SIMP continuation schedule, filter size, update aggressiveness and optional tension penalty. Leave defaults unless you know what you need.
+</p>
+</div>
+</details>
+
 <hr>
 <div class="section-header">Visualization Render Mode</div>
 <div class="control-group">
@@ -547,6 +583,17 @@ Adjust limits between 0.01 MPa and calculated peaks. Elements outside range rend
 <button id="btn-export" class="btn-secondary" style="flex: 1;" onclick="exportSTL()">Export .STL Geometry</button>
 <button id="btn-clear" class="btn-secondary-danger" style="flex: 1;" onclick="clearResults()">Clear Results</button>
 </div>
+
+<div id="density-evolution-panel" style="display: none; margin-top: 10px; padding: 10px; border: 1px solid #e5e5e5; background: #f9f9f9;">
+<div style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Density Evolution</div>
+<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+<button id="btn-evo-play" type="button" class="btn-secondary" style="padding: 4px 10px; min-width: 36px;" onclick="toggleEvolutionPlayback()" title="Play / Pause">▶</button>
+<input type="range" id="evo-scrubber" min="0" max="0" value="0" step="1" style="flex: 1;" oninput="onEvolutionScrub()">
+<span id="evo-frame-label" style="font-size: 0.75rem; min-width: 70px; text-align: right;">0 / 0</span>
+</div>
+<p style="font-size: 0.68rem; color: #888; margin: 0; line-height: 1.35;">Scrub or play to watch material redistribute. Intermediate frames show isosurface only (grey). Final frame restores full stress / displacement maps.</p>
+</div>
+
 <div id="status">Initialising WebAssembly Python runtime…</div>
 </div>
 <div id="viewport">
@@ -577,6 +624,15 @@ var currentSigmaMaxComp = -1.0;
 var currentUMax = 1.0, currentFk = 30.0;
 var worker = null;
 var engineReady = false;
+
+// Density evolution state
+var densityHistoryFrames = 0;
+var evoFrameCache = {};          // frameIndex -> {vertices, faces}
+var evoFinalFrame = null;        // stores the final full-result mesh + fields
+var evoCurrentIndex = 0;
+var evoPlaying = false;
+var evoPlayTimer = null;
+var evoIsIntermediate = false;
 var clipPlaneX = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 6000);
 var clipPlaneY = new THREE.Plane(new THREE.Vector3(0, 0, -1), 300);
 var clipPlaneZ = new THREE.Plane(new THREE.Vector3(0, -1, 0), 600);
@@ -1374,6 +1430,23 @@ currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_ten
 currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : Math.min(0.0, ...currentStressesMPa);
 currentUMax = data.data.u_max;
 currentFk = data.data.f_k || 30.0;
+
+// Store final frame for evolution restore
+evoFinalFrame = {
+vertices: currentVertices.slice(),
+faces: currentFaces.slice(),
+stresses: currentStressesMPa.slice(),
+deflections: currentDeflectionsMM.slice(),
+sigmaMaxTens: currentSigmaMaxTens,
+sigmaMaxComp: currentSigmaMaxComp,
+uMax: currentUMax
+};
+densityHistoryFrames = data.data.density_history_frames || 0;
+evoFrameCache = {};
+evoCurrentIndex = Math.max(0, densityHistoryFrames - 1);
+evoIsIntermediate = false;
+setupEvolutionPanel();
+
 var compSlider = document.getElementById('stress_comp_slider');
 var tensSlider = document.getElementById('stress_tens_slider');
 var maxCompAbs = Math.ceil(Math.abs(currentSigmaMaxComp) * 100) / 100;
@@ -1389,6 +1462,13 @@ status.innerText = "Optimisation complete in " + (data.data.solve_time_s || "?")
 (data.data.material_name || "") + "]. Rendering...";
 toggleRenderModeUI();
 reRenderMesh();
+} else if (data.status === 'frame_extracted') {
+var fr = data.data;
+evoFrameCache[fr.frame_index] = { vertices: fr.vertices, faces: fr.faces };
+applyEvolutionFrame(fr.frame_index);
+status.style.color = "#000000";
+status.style.borderLeftColor = "#000000";
+status.innerText = "Showing evolution frame " + (fr.frame_index + 1) + " / " + fr.total_frames;
 } else if (data.status === 'error') {
 btnExec.disabled = false;
 btnExec.innerText = "Execute Optimisation";
@@ -1409,6 +1489,11 @@ status.innerText = "Dispatching FE solver to Wasm worker...";
 document.getElementById('btn-exec').disabled = true;
 document.getElementById('btn-stop').style.display = 'block';
 document.getElementById('results-actions-group').style.display = 'none';
+document.getElementById('density-evolution-panel').style.display = 'none';
+stopEvolutionPlayback();
+densityHistoryFrames = 0;
+evoFrameCache = {};
+evoFinalFrame = null;
 var dofs = '';
 if (document.getElementById('dof_x').checked) dofs += 'x';
 if (document.getElementById('dof_y').checked) dofs += 'y';
@@ -1445,7 +1530,15 @@ load_preset: document.getElementById('load_preset').value,
 loads: getLoadArrayData(),
 void_regions: getVoidRegionArrayData(),
 iterations: Math.abs(parseInt(document.getElementById('iterations').value)) || 20,
-include_self_weight: document.getElementById('self_weight_toggle').checked
+include_self_weight: document.getElementById('self_weight_toggle').checked,
+// Advanced SIMP parameters
+penal_init: parseFloat(document.getElementById('penal_init').value) || 1.0,
+penal_final: parseFloat(document.getElementById('penal_final').value) || 3.0,
+penal_step: parseFloat(document.getElementById('penal_step').value) || 0.5,
+rmin_mm: parseFloat(document.getElementById('rmin_mm').value) || 150.0,
+move_limit: parseFloat(document.getElementById('move_limit').value) || 0.2,
+notension_weight: parseFloat(document.getElementById('notension_weight').value) || 3.0,
+record_density_history: document.getElementById('record_density_history').checked
 };
 worker.postMessage({ action: 'solve', payload: payload });
 }
@@ -1459,9 +1552,125 @@ document.getElementById('btn-stop').style.display = 'none';
 document.getElementById('btn-exec').disabled = true;
 document.getElementById('btn-exec').innerText = "Loading Wasm Engine…";
 document.getElementById('results-actions-group').style.display = 'none';
+document.getElementById('density-evolution-panel').style.display = 'none';
+stopEvolutionPlayback();
+densityHistoryFrames = 0;
+evoFrameCache = {};
+evoFinalFrame = null;
 engineReady = false;
 if (worker) worker.terminate();
 initWasmEngine();
+}
+
+// ---------- Density Evolution UI ----------
+function setupEvolutionPanel() {
+var panel = document.getElementById('density-evolution-panel');
+var scrubber = document.getElementById('evo-scrubber');
+var label = document.getElementById('evo-frame-label');
+if (densityHistoryFrames > 1) {
+panel.style.display = 'block';
+scrubber.min = 0;
+scrubber.max = densityHistoryFrames - 1;
+scrubber.value = densityHistoryFrames - 1;
+label.innerText = densityHistoryFrames + ' / ' + densityHistoryFrames;
+document.getElementById('btn-evo-play').innerText = '▶';
+evoPlaying = false;
+} else {
+panel.style.display = 'none';
+stopEvolutionPlayback();
+}
+}
+
+function onEvolutionScrub() {
+var idx = parseInt(document.getElementById('evo-scrubber').value, 10) || 0;
+requestEvolutionFrame(idx);
+}
+
+function requestEvolutionFrame(idx) {
+idx = Math.max(0, Math.min(idx, densityHistoryFrames - 1));
+evoCurrentIndex = idx;
+document.getElementById('evo-scrubber').value = idx;
+document.getElementById('evo-frame-label').innerText = (idx + 1) + ' / ' + densityHistoryFrames;
+
+// Final frame → restore full result with stress/displacement
+if (idx === densityHistoryFrames - 1 && evoFinalFrame) {
+applyFinalEvolutionFrame();
+return;
+}
+
+// Cached intermediate?
+if (evoFrameCache[idx]) {
+applyEvolutionFrame(idx);
+return;
+}
+
+// Ask worker to extract isosurface
+if (worker && engineReady) {
+document.getElementById('status').innerText = 'Extracting frame ' + (idx + 1) + '…';
+worker.postMessage({ action: 'extract_frame', payload: { frame_index: idx } });
+}
+}
+
+function applyEvolutionFrame(idx) {
+var fr = evoFrameCache[idx];
+if (!fr) return;
+currentVertices = fr.vertices;
+currentFaces = fr.faces;
+currentStressesMPa = [];
+currentDeflectionsMM = [];
+evoIsIntermediate = true;
+// Force monochrome for intermediate frames
+var prevMode = document.getElementById('render_mode').value;
+document.getElementById('render_mode').value = 'grey';
+toggleRenderModeUI();
+reRenderMesh();
+document.getElementById('render_mode').value = prevMode; // restore selection but keep grey render until final
+}
+
+function applyFinalEvolutionFrame() {
+if (!evoFinalFrame) return;
+currentVertices = evoFinalFrame.vertices;
+currentFaces = evoFinalFrame.faces;
+currentStressesMPa = evoFinalFrame.stresses;
+currentDeflectionsMM = evoFinalFrame.deflections;
+currentSigmaMaxTens = evoFinalFrame.sigmaMaxTens;
+currentSigmaMaxComp = evoFinalFrame.sigmaMaxComp;
+currentUMax = evoFinalFrame.uMax;
+evoIsIntermediate = false;
+toggleRenderModeUI();
+reRenderMesh();
+}
+
+function toggleEvolutionPlayback() {
+if (evoPlaying) {
+stopEvolutionPlayback();
+} else {
+startEvolutionPlayback();
+}
+}
+
+function startEvolutionPlayback() {
+if (densityHistoryFrames < 2) return;
+evoPlaying = true;
+document.getElementById('btn-evo-play').innerText = '❚❚';
+var next = function() {
+if (!evoPlaying) return;
+var nextIdx = evoCurrentIndex + 1;
+if (nextIdx >= densityHistoryFrames) nextIdx = 0;
+requestEvolutionFrame(nextIdx);
+evoPlayTimer = setTimeout(next, 450);
+};
+next();
+}
+
+function stopEvolutionPlayback() {
+evoPlaying = false;
+if (evoPlayTimer) {
+clearTimeout(evoPlayTimer);
+evoPlayTimer = null;
+}
+var btn = document.getElementById('btn-evo-play');
+if (btn) btn.innerText = '▶';
 }
 
 function clearResults() {
@@ -1478,6 +1687,11 @@ mesh = null;
 document.getElementById('legend').style.display = 'none';
 document.getElementById('results-actions-group').style.display = 'none';
 document.getElementById('stress_thresholds_div').style.display = 'none';
+document.getElementById('density-evolution-panel').style.display = 'none';
+stopEvolutionPlayback();
+densityHistoryFrames = 0;
+evoFrameCache = {};
+evoFinalFrame = null;
 var status = document.getElementById('status');
 status.style.color = "#000000";
 status.style.borderLeftColor = "#000000";
