@@ -42,10 +42,17 @@ importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
 
 let pyodide = null;
 
-const PENAL_INIT = 1.0;
-const PENAL_FINAL = 3.0;
-const PENAL_STEP = 0.5;
-const NOTENSION_WEIGHT = 3.0;
+// Defaults (overridden by payload when provided)
+const DEFAULT_PENAL_INIT = 1.0;
+const DEFAULT_PENAL_FINAL = 3.0;
+const DEFAULT_PENAL_STEP = 0.5;
+const DEFAULT_NOTENSION_WEIGHT = 3.0;
+const DEFAULT_RMIN_MM = 150.0;
+const DEFAULT_MOVE_LIMIT = 0.2;
+
+// Kept in worker memory between messages so the client can request intermediate frames
+let densityHistory = null; // list of density grids (Python side) or null
+let lastDomainMeta = null; // {Lx,Ly,Lz,nx,ny,nz,dx,dy,dz} for frame extraction
 
 async function initPyodideEngine() {
     try {
@@ -107,13 +114,29 @@ self.onmessage = async function(e) {
         try {
             const iterations = parseInt(payload.iterations) || 15;
 
+            // Advanced SIMP parameters (with safe defaults)
+            const penalInit = Number.isFinite(parseFloat(payload.penal_init)) ? parseFloat(payload.penal_init) : DEFAULT_PENAL_INIT;
+            const penalFinal = Number.isFinite(parseFloat(payload.penal_final)) ? parseFloat(payload.penal_final) : DEFAULT_PENAL_FINAL;
+            const penalStep = Number.isFinite(parseFloat(payload.penal_step)) ? Math.max(0.1, parseFloat(payload.penal_step)) : DEFAULT_PENAL_STEP;
+            const rminMm = Number.isFinite(parseFloat(payload.rmin_mm)) ? Math.max(1.0, parseFloat(payload.rmin_mm)) : DEFAULT_RMIN_MM;
+            const moveLimit = Number.isFinite(parseFloat(payload.move_limit)) ? Math.max(0.01, Math.min(0.5, parseFloat(payload.move_limit))) : DEFAULT_MOVE_LIMIT;
+            const notensionWeight = Number.isFinite(parseFloat(payload.notension_weight)) ? parseFloat(payload.notension_weight) : DEFAULT_NOTENSION_WEIGHT;
+            const recordHistory = payload.record_density_history !== false; // default on
+
             postMessage({ status: "running", current_iter: 0, total_iter: iterations, phase: "Resolving material & domain" });
 
+            // Clear previous history
+            densityHistory = null;
+            lastDomainMeta = null;
+
             pyodide.globals.set("payload_json", JSON.stringify(payload));
-            pyodide.globals.set("PENAL_INIT", PENAL_INIT);
-            pyodide.globals.set("PENAL_FINAL", PENAL_FINAL);
-            pyodide.globals.set("PENAL_STEP", PENAL_STEP);
-            pyodide.globals.set("NOTENSION_WEIGHT", NOTENSION_WEIGHT);
+            pyodide.globals.set("PENAL_INIT", penalInit);
+            pyodide.globals.set("PENAL_FINAL", penalFinal);
+            pyodide.globals.set("PENAL_STEP", penalStep);
+            pyodide.globals.set("RMIN_MM", rminMm);
+            pyodide.globals.set("MOVE_LIMIT", moveLimit);
+            pyodide.globals.set("NOTENSION_WEIGHT", notensionWeight);
+            pyodide.globals.set("RECORD_HISTORY", recordHistory);
 
             // 1. ONE-OFF SETUP: material, domain, supports, line supports, loads, optimiser instance.
             await pyodide.runPythonAsync(`
@@ -217,7 +240,7 @@ include_self_weight = bool(payload.get("include_self_weight", True))
 is_notension_material = domain.material_type in ("concrete", "masonry", "stone")
 
 opt = TopologyOptimiser3DCompliance(
-    domain=domain, volfrac=volfrac, penal_k=PENAL_INIT, rmin_mm=150.0,
+    domain=domain, volfrac=volfrac, penal_k=PENAL_INIT, rmin_mm=RMIN_MM,
     notension_weight=NOTENSION_WEIGHT,
 )
 
@@ -225,8 +248,13 @@ opt.x = np.full((domain.nx, domain.ny, domain.nz), volfrac)
 opt.x[domain.passive_mask == 1.0] = 1.0
 opt.x[domain.passive_mask == 0.0] = 0.001
 
-n_stages = int(round((PENAL_FINAL - PENAL_INIT) / PENAL_STEP)) + 1
+n_stages = max(1, int(round((PENAL_FINAL - PENAL_INIT) / PENAL_STEP)) + 1)
 continuation_interval = max(1, sim_iterations // n_stages)
+
+# Density history for evolution scrubber (list of float32 arrays)
+density_history = [] if RECORD_HISTORY else None
+if density_history is not None:
+    density_history.append(np.round(opt.x.astype(np.float32), 3).copy())
             `);
 
             // 2. ONE SIMP ITERATION PER AWAIT
@@ -249,7 +277,7 @@ dc_filtered = opt.filter_sensitivity(dc, opt.x)
 if is_notension_material:
     dc_filtered = dc_filtered + opt.compute_notension_penalty(U)
 
-l1, l2, move = 0.0, 1e12, 0.2
+l1, l2, move = 0.0, 1e12, float(MOVE_LIMIT)
 while (l2 - l1) / (l1 + l2 + 1e-10) > 1e-4:
     lmid = 0.5 * (l1 + l2)
     xnew = np.maximum(
@@ -266,6 +294,9 @@ while (l2 - l1) / (l1 + l2 + 1e-10) > 1e-4:
     else:
         l2 = lmid
 opt.x = xnew
+
+if density_history is not None:
+    density_history.append(np.round(opt.x.astype(np.float32), 3).copy())
                 `);
 
                 const elapsed_ms = Math.round(performance.now() - t0);
@@ -343,6 +374,8 @@ else:
 
 elapsed_time = time.time() - t0
 
+n_history = len(density_history) if density_history is not None else 0
+
 json.dumps({
     "vertices": verts_mm.tolist(),
     "faces": faces.tolist(),
@@ -358,12 +391,71 @@ json.dumps({
     "solve_time_s": round(elapsed_time, 2),
     "self_weight_included": include_self_weight,
     "notension_applied": is_notension_material,
+    "density_history_frames": n_history,
 })
             `);
+
+            // Keep density history alive in Python globals for on-demand extract_frame
+            if (recordHistory) {
+                await pyodide.runPythonAsync(`
+# Persist history + domain metrics for later frame extraction
+_density_history = density_history
+_domain_dx = float(domain.dx)
+_domain_dy = float(domain.dy)
+_domain_dz = float(domain.dz)
+_domain_Lx = float(domain.Lx)
+_domain_Ly = float(domain.Ly)
+_domain_Lz = float(domain.Lz)
+_domain_nx = int(domain.nx)
+_domain_ny = int(domain.ny)
+_domain_nz = int(domain.nz)
+                `);
+                densityHistory = true; // flag that history is available
+            } else {
+                densityHistory = null;
+            }
 
             postMessage({ status: "completed", data: JSON.parse(resultJson) });
         } catch (err) {
             postMessage({ status: "error", message: err.toString() });
         }
+        return;
+    }
+
+    // --- On-demand isosurface extraction for density evolution scrubber ---
+    if (action === "extract_frame") {
+        if (!pyodide || !densityHistory) {
+            postMessage({ status: "error", message: "No density history available. Re-run with 'Record density history' enabled." });
+            return;
+        }
+        try {
+            const frameIndex = parseInt(payload.frame_index) || 0;
+            pyodide.globals.set("frame_index", frameIndex);
+            const frameJson = await pyodide.runPythonAsync(`
+idx = int(frame_index)
+if _density_history is None or idx < 0 or idx >= len(_density_history):
+    raise ValueError(f"Frame index {idx} out of range (0..{len(_density_history)-1 if _density_history else -1})")
+
+x_frame = _density_history[idx]
+padded = np.pad(x_frame, 1, mode="constant", constant_values=0)
+verts, faces, _, _ = measure.marching_cubes(padded, level=0.50)
+
+verts_mm = np.copy(verts)
+verts_mm[:, 0] = np.clip((verts[:, 0] - 1.0) * _domain_dx, 0.0, _domain_Lx)
+verts_mm[:, 1] = np.clip((verts[:, 1] - 1.0) * _domain_dy, 0.0, _domain_Ly)
+verts_mm[:, 2] = np.clip((verts[:, 2] - 1.0) * _domain_dz, 0.0, _domain_Lz)
+
+json.dumps({
+    "vertices": verts_mm.tolist(),
+    "faces": faces.tolist(),
+    "frame_index": idx,
+    "total_frames": len(_density_history),
+})
+            `);
+            postMessage({ status: "frame_extracted", data: JSON.parse(frameJson) });
+        } catch (err) {
+            postMessage({ status: "error", message: "Frame extraction failed: " + err.toString() });
+        }
+        return;
     }
 };
