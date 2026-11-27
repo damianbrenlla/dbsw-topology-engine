@@ -20,10 +20,20 @@ class TopologyOptimiser3DCompliance:
         notension_weight: float = 3.0,
     ):
         self.domain = domain
-        self.volfrac = volfrac
-        self.penal_k = penal_k
-        self.rmin_mm = rmin_mm
-        self.notension_weight = notension_weight
+        self.volfrac = float(volfrac)
+        if not np.isfinite(self.volfrac) or not (0.0 < self.volfrac <= 1.0):
+            raise ValueError("Volume fraction must be greater than 0 and no greater than 1.")
+        self.penal_k = float(penal_k)
+        self.requested_rmin_mm = float(rmin_mm)
+        if not np.isfinite(self.requested_rmin_mm) or self.requested_rmin_mm <= 0.0:
+            raise ValueError("Sensitivity filter radius must be a finite positive value.")
+        # A filter radius smaller than the coarsest element spacing excludes
+        # the adjacent element in that direction entirely. Use a meaningful
+        # physical radius (1.5 element widths) rather than silently running
+        # an effectively unfiltered optimisation in that direction.
+        self.minimum_rmin_mm = 1.5 * max(domain.dx, domain.dy, domain.dz)
+        self.rmin_mm = max(self.requested_rmin_mm, self.minimum_rmin_mm)
+        self.notension_weight = float(notension_weight)
 
         self.Emax = float(domain.E0)  # MPa
         self.Emin = 1e-9 * self.Emax
@@ -270,6 +280,81 @@ class TopologyOptimiser3DCompliance:
         np.add.at(Fsw, z_dofs.flatten(), np.repeat(-node_weight_n, 8))
 
         return Fsw
+
+    def compute_compliance_sensitivity(self, U, x, include_self_weight=False):
+        """Return dC/dx for compliance, including density-dependent self-weight.
+
+        For C = F(x)^T U and K(x)U = F(x), the derivative is
+        2 U^T dF/dx - U^T dK/dx U. The stiffness term is the standard SIMP
+        energy derivative; the first term is required when self-weight is
+        included because the gravity load is proportional to element density.
+        """
+        x = np.asarray(x, dtype=float)
+        U_elem = U[self.edof_vec]
+        element_energy = np.sum((U_elem @ self.KE) * U_elem, axis=1)
+        dc = (
+            -self.penal_k
+            * np.power(np.maximum(x.reshape(-1), 1e-3), self.penal_k - 1.0)
+            * (self.Emax - self.Emin)
+            * element_energy
+        )
+        if include_self_weight and self.domain.gamma_n_mm3 > 0.0:
+            element_volume = self.domain.dx * self.domain.dy * self.domain.dz
+            nodal_dFz_dx = -self.domain.gamma_n_mm3 * element_volume / 8.0
+            dC_load = 2.0 * nodal_dFz_dx * np.sum(U_elem[:, 2::3], axis=1)
+            dc = dc + dC_load
+        return dc.reshape(x.shape)
+
+    def optimality_criteria_update(self, dc, move_limit=0.2, max_iterations=80):
+        """Bounded OC update satisfying the global volume inequality.
+
+        Passive solid/void cells remain fixed. An infeasible target (for
+        example, more forced-solid material than the requested volume) is
+        reported explicitly instead of leaving an unbounded lambda search.
+        """
+        x = self.x
+        passive_solid = self.domain.passive_mask == 1.0
+        passive_void = self.domain.passive_mask == 0.0
+        free = ~(passive_solid | passive_void)
+        target_volume = self.volfrac * x.size
+        minimum_volume = (
+            float(np.count_nonzero(passive_solid))
+            + 0.001 * float(x.size - np.count_nonzero(passive_solid))
+        )
+        if minimum_volume > target_volume + 1e-8:
+            raise ValueError(
+                "Volume fraction is infeasible: forced-solid regions alone "
+                "exceed the requested material volume."
+            )
+        if not np.any(free):
+            return x.copy()
+
+        move = float(move_limit)
+        if not np.isfinite(move) or not (0.0 < move <= 1.0):
+            raise ValueError("OC move limit must be greater than 0 and no greater than 1.")
+
+        lower = np.maximum(0.001, x - move)
+        upper = np.minimum(1.0, x + move)
+        dc_flat = np.asarray(dc, dtype=float).reshape(x.shape)
+        l1, l2 = 0.0, 1e12
+        xnew = x.copy()
+        for _ in range(int(max_iterations)):
+            lmid = 0.5 * (l1 + l2)
+            ratio = np.sqrt(np.maximum(-dc_flat, 1e-12) / max(lmid, 1e-30))
+            candidate = np.minimum(upper, np.maximum(lower, x * ratio))
+            xnew[free] = candidate[free]
+            xnew[passive_solid] = 1.0
+            xnew[passive_void] = 0.001
+            if np.sum(xnew) > target_volume:
+                l1 = lmid
+            else:
+                l2 = lmid
+            if (l2 - l1) / (l1 + l2 + 1e-30) <= 1e-5:
+                break
+
+        if np.sum(xnew) > target_volume + 1e-5:
+            raise RuntimeError("OC update could not satisfy the requested volume constraint.")
+        return xnew
 
     def compute_notension_penalty(self, U):
         elem_stress = self.recover_element_stress_field(U)
