@@ -387,6 +387,9 @@ json.dumps({
     "solve_time_s": round(elapsed_time, 2),
     "self_weight_included": include_self_weight,
     "notension_applied": is_notension_material,
+    "notension_method": "heuristic sensitivity preference (not a constitutive no-tension material model)",
+    "filter_radius_requested_mm": opt.requested_rmin_mm,
+    "filter_radius_applied_mm": opt.rmin_mm,
     "density_history_frames": n_history,
 })
             `);
