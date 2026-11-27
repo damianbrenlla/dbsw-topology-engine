@@ -4,10 +4,17 @@ Run with: python -m unittest discover -s tests -v
 """
 import os
 import sys
+import types
 import unittest
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python_core"))
+CORE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "python_core"))
+sys.path.insert(0, CORE_PATH)
+# The browser mounts python_core as /home/pyodide/core; mirror that package
+# name for local/CI tests without changing the deployed module layout.
+core_package = types.ModuleType("core")
+core_package.__path__ = [CORE_PATH]
+sys.modules.setdefault("core", core_package)
 
 from core.domain import Domain3D
 from core.solvers import TopologyOptimiser3DCompliance
