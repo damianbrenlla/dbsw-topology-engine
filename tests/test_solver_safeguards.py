@@ -55,6 +55,28 @@ class SolverSafeguardTests(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(with_sw)))
         self.assertGreater(float(np.linalg.norm(with_sw - without_sw)), 0.0)
 
+    def test_penalisation_continuation_is_smooth_and_reaches_endpoints(self):
+        values = [
+            TopologyOptimiser3DCompliance.continuation_penalisation(i, 20, 1.0, 3.0, 0.5)
+            for i in range(20)
+        ]
+        self.assertAlmostEqual(values[0], 1.0)
+        self.assertAlmostEqual(values[-1], 3.0)
+        self.assertTrue(all(a <= b for a, b in zip(values, values[1:])))
+        # No discrete 0.5 jump: the maximum per-iteration increment is small.
+        self.assertLess(max(b - a for a, b in zip(values, values[1:])), 0.2)
+
+    def test_no_tension_penalty_is_scaled_and_filtered(self):
+        domain = make_domain()
+        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=300.0)
+        x = np.full((domain.nx, domain.ny, domain.nz), 0.5)
+        base = -np.full_like(x, 100.0)
+        penalty = np.full_like(x, 30000.0)
+        combined = opt.combine_notension_sensitivity(base, penalty, x)
+        self.assertTrue(np.all(np.isfinite(combined)))
+        self.assertTrue(np.all(combined > base))
+        self.assertTrue(np.all(combined < 0.0))
+
     def test_oc_preserves_passive_regions_and_volume(self):
         domain = make_domain()
         domain.passive_mask[0, 0, 0] = 1.0
