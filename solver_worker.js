@@ -204,11 +204,10 @@ elif sup_mode == "custom":
     z_b = [float(payload.get("sup_z_min", 0)), float(payload.get("sup_z_max", domain.Lz))]
     domain.add_support_box(x_b, y_b, z_b, dofs=payload.get("sup_dofs", "xyz"))
 
-# Discrete Point Supports
+# Discrete Point Supports — snap to the nearest mesh node on each axis.
 for ps in payload.get("point_supports", []):
-    r = 15.0
-    px, py, pz = float(ps["x"]), float(ps["y"]), float(ps["z"])
-    domain.add_support_box([px - r, px + r], [py - r, py + r], [pz - r, pz + r], dofs=ps.get("dofs", "xyz"))
+    coord = [float(ps["x"]), float(ps["y"]), float(ps["z"])]
+    domain.add_point_support(coord, dofs=ps.get("dofs", "xyz"))
 
 # --- Discrete Line Supports Discretisation ---
 # FIX: delegate to domain.add_line_support(), which snaps each sampled
