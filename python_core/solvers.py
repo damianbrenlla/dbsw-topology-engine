@@ -330,7 +330,8 @@ class TopologyOptimiser3DCompliance:
         # If the current iterate and move bound make the target unreachable,
         # relax only the lower move bound enough to restore feasibility.
         if float(np.sum(lower)) > target_volume + 1e-8:
-            available = target_volume - fixed_volume
+            # Leave a tiny numerical margin so the relaxed lower-bound sum is strictly feasible.
+            available = target_volume - fixed_volume - 1e-8 * max(1.0, target_volume)
             nfree = int(np.count_nonzero(free))
             if available < 0.001 * nfree - 1e-8:
                 raise ValueError("Volume fraction is infeasible: passive regions leave less than the minimum free-element density.")
