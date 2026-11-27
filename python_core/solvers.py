@@ -384,6 +384,47 @@ class TopologyOptimiser3DCompliance:
             raise RuntimeError("OC update remains infeasible after adaptive bracketing; check passive regions and the requested volume fraction.")
         return best_feasible
 
+    @staticmethod
+    def continuation_penalisation(iteration, total_iterations, penal_init, penal_final, penal_step):
+        """Smoothly traverse SIMP penalisation stages without abrupt iteration jumps."""
+        start = float(penal_init)
+        finish = float(penal_final)
+        step = float(penal_step)
+        count = max(1, int(np.ceil((finish - start) / step)))
+        progress = np.clip(float(iteration) / max(int(total_iterations) - 1, 1), 0.0, 1.0)
+        stage_position = progress * count
+        stage_index = min(int(np.floor(stage_position)), count - 1)
+        local_progress = stage_position - stage_index
+        smooth = local_progress * local_progress * (3.0 - 2.0 * local_progress)
+        value = start + min(count, stage_index + smooth) * step
+        return min(finish, value)
+
+    def combine_notension_sensitivity(self, compliance_sensitivity, notension_penalty, x):
+        """Add a bounded, scale-consistent and spatially filtered no-tension preference.
+
+        The stress heuristic is dimensionless after division by the elastic modulus
+        scale, then scaled by a robust compliance-sensitivity reference. This avoids
+        mixing MPa directly with the compliance derivative's different units.
+        """
+        base = np.asarray(compliance_sensitivity, dtype=float)
+        penalty = np.asarray(notension_penalty, dtype=float)
+        density = np.asarray(x, dtype=float)
+        if base.shape != density.shape or penalty.shape != density.shape:
+            raise ValueError("No-tension sensitivity fields must match the density grid.")
+        if not np.all(np.isfinite(base)) or not np.all(np.isfinite(penalty)):
+            raise ValueError("No-tension sensitivity fields contain non-finite values.")
+        active = density > 0.05
+        reference_values = np.abs(base[active])
+        if reference_values.size == 0:
+            reference_values = np.abs(base)
+        reference_scale = float(np.median(reference_values)) if reference_values.size else 0.0
+        if not np.isfinite(reference_scale) or reference_scale <= 1e-30:
+            return base.copy()
+        modulus_scale = max(self.Emax - self.Emin, 1e-30)
+        dimensionless_penalty = np.maximum(penalty, 0.0) / modulus_scale
+        combined = base + dimensionless_penalty * reference_scale
+        return self.filter_sensitivity(combined, density)
+
     def compute_notension_penalty(self, U):
         elem_stress = self.recover_element_stress_field(U)
         stress_grid = elem_stress.reshape(
