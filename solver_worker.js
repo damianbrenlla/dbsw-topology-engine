@@ -1,5 +1,5 @@
 /**
- * DBSW R260003 Topology Engine - Client-Side Pyodide WebWorker
+ * DBSW R260004 Topology Engine - Client-Side Pyodide WebWorker
  * Author: Damian Brenlla / DBSW 2026
  *
  * This mirrors the orchestration logic in the Flask app.py version (support
