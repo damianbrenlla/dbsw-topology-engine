@@ -305,27 +305,16 @@ class TopologyOptimiser3DCompliance:
             dc = dc + dC_load
         return dc.reshape(x.shape)
 
-    def optimality_criteria_update(self, dc, move_limit=0.2, max_iterations=80):
-        """Bounded OC update satisfying the global volume inequality.
-
-        Passive solid/void cells remain fixed. An infeasible target (for
-        example, more forced-solid material than the requested volume) is
-        reported explicitly instead of leaving an unbounded lambda search.
-        """
-        x = self.x
+    def optimality_criteria_update(self, dc, move_limit=0.2, max_iterations=100):
+        """Bounded OC update with an adaptive multiplier bracket."""
+        x = np.asarray(self.x, dtype=float)
         passive_solid = self.domain.passive_mask == 1.0
         passive_void = self.domain.passive_mask == 0.0
         free = ~(passive_solid | passive_void)
-        target_volume = self.volfrac * x.size
-        minimum_volume = (
-            float(np.count_nonzero(passive_solid))
-            + 0.001 * float(x.size - np.count_nonzero(passive_solid))
-        )
-        if minimum_volume > target_volume + 1e-8:
-            raise ValueError(
-                "Volume fraction is infeasible: forced-solid regions alone "
-                "exceed the requested material volume."
-            )
+        target_volume = float(self.volfrac * x.size)
+        fixed_volume = float(np.count_nonzero(passive_solid)) + 0.001 * float(np.count_nonzero(passive_void))
+        if fixed_volume > target_volume + 1e-8:
+            raise ValueError("Volume fraction is infeasible: forced-solid and passive-void regions alone exceed the requested material volume.")
         if not np.any(free):
             return x.copy()
 
@@ -335,26 +324,64 @@ class TopologyOptimiser3DCompliance:
 
         lower = np.maximum(0.001, x - move)
         upper = np.minimum(1.0, x + move)
+        lower[passive_solid] = upper[passive_solid] = 1.0
+        lower[passive_void] = upper[passive_void] = 0.001
+
+        # If the current iterate and move bound make the target unreachable,
+        # relax only the lower move bound enough to restore feasibility.
+        if float(np.sum(lower)) > target_volume + 1e-8:
+            available = target_volume - fixed_volume
+            nfree = int(np.count_nonzero(free))
+            if available < 0.001 * nfree - 1e-8:
+                raise ValueError("Volume fraction is infeasible: passive regions leave less than the minimum free-element density.")
+            old_free_lower = lower[free] - 0.001
+            old_total = float(np.sum(old_free_lower))
+            scale = 0.0 if old_total <= 0.0 else max(0.0, min(1.0, (available - 0.001 * nfree) / old_total))
+            lower[free] = 0.001 + old_free_lower * scale
+
         dc_flat = np.asarray(dc, dtype=float).reshape(x.shape)
-        l1, l2 = 0.0, 1e12
-        xnew = x.copy()
-        for _ in range(int(max_iterations)):
-            lmid = 0.5 * (l1 + l2)
-            ratio = np.sqrt(np.maximum(-dc_flat, 1e-12) / max(lmid, 1e-30))
+        if not np.all(np.isfinite(dc_flat)):
+            raise ValueError("OC sensitivities contain non-finite values.")
+        ratio_numerator = np.maximum(-dc_flat, 1e-30)
+
+        def candidate_for(multiplier):
+            ratio = np.sqrt(ratio_numerator / max(float(multiplier), 1e-300))
             candidate = np.minimum(upper, np.maximum(lower, x * ratio))
-            xnew[free] = candidate[free]
-            xnew[passive_solid] = 1.0
-            xnew[passive_void] = 0.001
-            if np.sum(xnew) > target_volume:
-                l1 = lmid
+            candidate[passive_solid] = 1.0
+            candidate[passive_void] = 0.001
+            return candidate
+
+        # Adapt the upper bracket to the actual sensitivity magnitude.
+        multiplier_low = 0.0
+        multiplier_high = max(float(np.max(ratio_numerator)), 1.0)
+        candidate = candidate_for(multiplier_high)
+        for _ in range(200):
+            if float(np.sum(candidate)) <= target_volume:
+                break
+            multiplier_high *= 2.0
+            if not np.isfinite(multiplier_high):
+                raise RuntimeError("Could not bracket a feasible OC multiplier.")
+            candidate = candidate_for(multiplier_high)
+        else:
+            raise RuntimeError("Could not find a feasible OC multiplier for the requested volume.")
+
+        best_feasible = candidate
+        for _ in range(max(1, int(max_iterations))):
+            mid = 0.5 * (multiplier_low + multiplier_high)
+            candidate = candidate_for(mid)
+            if float(np.sum(candidate)) > target_volume:
+                multiplier_low = mid
             else:
-                l2 = lmid
-            if (l2 - l1) / (l1 + l2 + 1e-30) <= 1e-5:
+                multiplier_high = mid
+                best_feasible = candidate
+            if multiplier_high > 0.0 and (multiplier_high - multiplier_low) / multiplier_high <= 1e-8:
                 break
 
-        if np.sum(xnew) > target_volume + 1e-5:
-            raise RuntimeError("OC update could not satisfy the requested volume constraint.")
-        return xnew
+        best_feasible[passive_solid] = 1.0
+        best_feasible[passive_void] = 0.001
+        if float(np.sum(best_feasible)) > target_volume + 1e-6:
+            raise RuntimeError("OC update remains infeasible after adaptive bracketing; check passive regions and the requested volume fraction.")
+        return best_feasible
 
     def compute_notension_penalty(self, U):
         elem_stress = self.recover_element_stress_field(U)
