@@ -74,6 +74,24 @@ class SolverSafeguardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "forced-solid"):
             opt.optimality_criteria_update(-np.ones_like(opt.x))
 
+    def test_oc_adaptive_bracket_handles_large_sensitivity_scale(self):
+        domain = make_domain()
+        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=300.0)
+        opt.x[:] = 0.5
+        updated = opt.optimality_criteria_update(-np.full_like(opt.x, 1e20), move_limit=0.2)
+        self.assertTrue(np.all(np.isfinite(updated)))
+        self.assertLessEqual(float(np.sum(updated)), opt.volfrac * updated.size + 1e-6)
+
+    def test_oc_relaxes_move_lower_bound_when_passive_solid_makes_it_infeasible(self):
+        domain = make_domain()
+        domain.passive_mask[0, 0, 0] = 1.0
+        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.2, rmin_mm=300.0)
+        opt.x[:] = 0.2
+        opt.x[domain.passive_mask == 1.0] = 1.0
+        updated = opt.optimality_criteria_update(-np.ones_like(opt.x), move_limit=0.05)
+        self.assertEqual(updated[0, 0, 0], 1.0)
+        self.assertLessEqual(float(np.sum(updated)), opt.volfrac * updated.size + 1e-6)
+
     def test_filter_rejects_invalid_radius(self):
         domain = make_domain()
         with self.assertRaisesRegex(ValueError, "filter radius"):
