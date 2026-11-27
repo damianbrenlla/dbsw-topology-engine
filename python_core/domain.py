@@ -1,229 +1,283 @@
-"""Regression tests for R260004 topology optimisation safeguards.
+# DBSW 3D Spatial Domain Definition Engine
+# Author: Damian Brenlla / DBSW 2026
+# v2 — Added add_line_support(). Previously, 3D line supports were built in
+#      solver_worker.js by sampling points along the line and calling
+#      add_support_box() with a small isotropic search-box radius at each
+#      sample. add_support_box() has no real node-finding tolerance of its
+#      own (eps=1e-2mm, meant only to absorb floating-point rounding) — so
+#      whether a sample actually captured a node depended entirely on that
+#      worker-side radius being large enough on EVERY axis. For an
+#      anisotropic mesh (dx != dy != dz, which is the norm for a wall/beam
+#      domain like Lx=6000 Ly=300 Lz=600 with nx=36 ny=9 nz=12), a radius
+#      sized off the mesh's finest spacing is too small on the coarser axes.
+#      Confirmed by direct test: a line support placed at a Y coordinate
+#      more than ~12.5mm from an existing node row (a ~21mm-wide gap out of
+#      every 33.3mm between node rows, on the default domain) captured
+#      ZERO degrees of freedom — silently. The structure would then solve
+#      with less restraint than intended, or fail outright if that was the
+#      only support defined.
+#
+#      add_line_support() below sidesteps the box-radius problem entirely by
+#      reusing the same nearest-node INDEX ROUNDING already proven correct
+#      in add_point_load() (round(coord / spacing), clipped to the node
+#      range) rather than testing whether a node falls inside a small box.
+#      That guarantees exactly one node is captured per sample, on every
+#      axis, regardless of how anisotropic dx/dy/dz are.
 
-Run with: python -m unittest discover -s tests -v
-"""
-import os
-import sys
-import types
-import unittest
 import numpy as np
 
-CORE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "python_core"))
-sys.path.insert(0, CORE_PATH)
-# The browser mounts python_core as /home/pyodide/core; mirror that package
-# name for local/CI tests without changing the deployed module layout.
-core_package = types.ModuleType("core")
-core_package.__path__ = [CORE_PATH]
-sys.modules.setdefault("core", core_package)
 
-from core.domain import Domain3D
-from core.solvers import TopologyOptimiser3DCompliance
+class Domain3D:
+    """3D Spatial Continuum Domain for FEA and Topology Optimization."""
 
+    def __init__(
+        self,
+        Lx: float,
+        Ly: float,
+        Lz: float,
+        nx: int,
+        ny: int,
+        nz: int,
+        E: float = 210000.0,
+        nu: float = 0.30,
+        f_k: float = 355.0,
+        f_d: float = 355.0,
+        material_type: str = "steel",
+        material_name: str = "Steel S355",
+        gamma_kn_m3: float = 0.0,
+    ):
+        self.Lx = float(Lx)
+        self.Ly = float(Ly)
+        self.Lz = float(Lz)
+        self.nx = int(nx)
+        self.ny = int(ny)
+        self.nz = int(nz)
 
-def make_domain(nx=3, ny=2, nz=2):
-    return Domain3D(
-        Lx=600.0, Ly=200.0, Lz=200.0,
-        nx=nx, ny=ny, nz=nz,
-        E=30000.0, nu=0.2, f_k=30.0, f_d=20.0,
-        material_type="concrete", material_name="Test concrete",
-        gamma_kn_m3=25.0,
-    )
+        self.dx = self.Lx / self.nx
+        self.dy = self.Ly / self.ny
+        self.dz = self.Lz / self.nz
 
+        self.n_elems = self.nx * self.ny * self.nz
+        self.n_nodes = (self.nx + 1) * (self.ny + 1) * (self.nz + 1)
+        self.ndof = 3 * self.n_nodes
 
-class SolverSafeguardTests(unittest.TestCase):
-    def test_filter_reaches_neighbour_on_coarsest_axis(self):
-        domain = Domain3D(
-            Lx=6000.0, Ly=300.0, Lz=600.0,
-            nx=36, ny=9, nz=12,
-            E=30000.0, nu=0.2, f_k=30.0, f_d=20.0,
-            material_type="concrete", material_name="Test concrete",
-            gamma_kn_m3=25.0,
-        )
-        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=150.0)
-        self.assertGreaterEqual(opt.rmin_mm, 1.5 * max(domain.dx, domain.dy, domain.dz))
-        kernel = opt.filter_kernel
-        cx, cy, cz = (n // 2 for n in kernel.shape)
-        self.assertGreater(kernel[cx + 1, cy, cz], 0.0)
+        self.E0 = float(E)
+        self.nu = float(nu)
+        self.f_k = float(f_k)
+        self.f_d = float(f_d)
 
-    def test_self_weight_sensitivity_contains_load_derivative(self):
-        domain = make_domain()
-        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=300.0)
-        x = np.full((domain.nx, domain.ny, domain.nz), 0.5)
-        U = np.linspace(-0.02, 0.03, domain.ndof)
-        with_sw = opt.compute_compliance_sensitivity(U, x, include_self_weight=True)
-        without_sw = opt.compute_compliance_sensitivity(U, x, include_self_weight=False)
-        self.assertTrue(np.all(np.isfinite(with_sw)))
-        self.assertGreater(float(np.linalg.norm(with_sw - without_sw)), 0.0)
+        allowed_materials = ["steel", "concrete", "timber", "masonry", "stone", "generic"]
+        mat_lower = material_type.lower()
+        if mat_lower not in allowed_materials:
+            raise ValueError(f"Unsupported material_type '{material_type}'. Must be one of {allowed_materials}")
 
-    def test_penalisation_continuation_is_smooth_and_reaches_endpoints(self):
-        values = [
-            TopologyOptimiser3DCompliance.continuation_penalisation(i, 20, 1.0, 3.0, 0.5)
-            for i in range(20)
-        ]
-        self.assertAlmostEqual(values[0], 1.0)
-        self.assertAlmostEqual(values[-1], 3.0)
-        self.assertTrue(all(a <= b for a, b in zip(values, values[1:])))
-        # No discrete 0.5 jump: the maximum per-iteration increment is small.
-        self.assertLess(max(b - a for a, b in zip(values, values[1:])), 0.2)
+        self.material_type = mat_lower
+        self.material_name = material_name
 
-    def test_no_tension_penalty_is_scaled_and_filtered(self):
-        domain = make_domain()
-        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=300.0)
-        x = np.full((domain.nx, domain.ny, domain.nz), 0.5)
-        base = -np.full_like(x, 100.0)
-        penalty = np.full_like(x, 15000.0)
-        combined = opt.combine_notension_sensitivity(base, penalty, x)
-        self.assertTrue(np.all(np.isfinite(combined)))
-        self.assertTrue(np.all(combined > base))
-        self.assertTrue(np.all(combined < 0.0))
+        # Unit weight: 1 kN/m3 = 1e-6 N/mm3
+        self.gamma_kn_m3 = float(gamma_kn_m3)
+        self.gamma_n_mm3 = self.gamma_kn_m3 * 1e-6
 
-    def test_oc_preserves_passive_regions_and_volume(self):
-        domain = make_domain()
-        domain.passive_mask[0, 0, 0] = 1.0
-        domain.passive_mask[-1, -1, -1] = 0.0
-        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=300.0)
-        opt.x[:] = 0.5
-        dc = -np.ones_like(opt.x)
-        updated = opt.optimality_criteria_update(dc, move_limit=0.2)
-        self.assertEqual(updated[0, 0, 0], 1.0)
-        self.assertEqual(updated[-1, -1, -1], 0.001)
-        self.assertLessEqual(float(np.sum(updated)), opt.volfrac * updated.size + 1e-4)
+        self.F = np.zeros(self.ndof)
+        self.fixed_dofs = []
 
-    def test_oc_rejects_infeasible_passive_solid_volume(self):
-        domain = make_domain()
-        domain.passive_mask[:] = 1.0
-        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=300.0)
-        with self.assertRaisesRegex(ValueError, "forced-solid"):
-            opt.optimality_criteria_update(-np.ones_like(opt.x))
+        # Passive region mask: 1.0 = forced solid, 0.0 = forced void, -1.0 = free design space
+        self.passive_mask = np.full((self.nx, self.ny, self.nz), -1.0)
 
-    def test_oc_adaptive_bracket_handles_large_sensitivity_scale(self):
-        domain = make_domain()
-        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=300.0)
-        opt.x[:] = 0.5
-        updated = opt.optimality_criteria_update(-np.full_like(opt.x, 1e20), move_limit=0.2)
-        self.assertTrue(np.all(np.isfinite(updated)))
-        self.assertLessEqual(float(np.sum(updated)), opt.volfrac * updated.size + 1e-6)
+    def _get_node_grid(self):
+        """Canonical 3D Node Grid in (nx+1, ny+1, nz+1) shape."""
+        return np.arange(self.n_nodes).reshape((self.nx + 1, self.ny + 1, self.nz + 1))
 
-    def test_oc_relaxes_move_lower_bound_when_passive_solid_makes_it_infeasible(self):
-        domain = make_domain()
-        domain.passive_mask[0, 0, 0] = 1.0
-        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.2, rmin_mm=300.0)
-        opt.x[:] = 0.2
-        opt.x[domain.passive_mask == 1.0] = 1.0
-        updated = opt.optimality_criteria_update(-np.ones_like(opt.x), move_limit=0.05)
-        self.assertEqual(updated[0, 0, 0], 1.0)
-        self.assertLessEqual(float(np.sum(updated)), opt.volfrac * updated.size + 1e-6)
+    def add_support_box(self, x_bounds, y_bounds, z_bounds, dofs="xyz"):
+        """Restrains DOFs and protects surrounding elements as solid passive mask."""
+        x_min, x_max = min(x_bounds), max(x_bounds)
+        y_min, y_max = min(y_bounds), max(y_bounds)
+        z_min, z_max = min(z_bounds), max(z_bounds)
 
-    def test_filter_rejects_invalid_radius(self):
-        domain = make_domain()
-        with self.assertRaisesRegex(ValueError, "filter radius"):
-            TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=0.0)
+        nodenrs = self._get_node_grid()
+        eps = 1e-2
+        captured_nodes = 0
 
-    def test_point_support_snaps_to_nearest_node_on_anisotropic_mesh(self):
-        domain = Domain3D(
-            Lx=6000.0, Ly=300.0, Lz=600.0,
-            nx=36, ny=9, nz=12,
-        )
-        domain.add_point_support([100.0, 16.0, 24.0], dofs="xyz")
-        self.assertEqual(len(domain.fixed_dofs), 3)
-        self.assertEqual(int(np.count_nonzero(domain.passive_mask == 1.0)), 1)
+        for ix in range(self.nx + 1):
+            px = ix * self.dx
+            if x_min - eps <= px <= x_max + eps:
+                for iy in range(self.ny + 1):
+                    py = iy * self.dy
+                    if y_min - eps <= py <= y_max + eps:
+                        for iz in range(self.nz + 1):
+                            pz = iz * self.dz
+                            if z_min - eps <= pz <= z_max + eps:
+                                node = nodenrs[ix, iy, iz]
+                                captured_nodes += 1
+                                if "x" in dofs:
+                                    self.fixed_dofs.append(3 * node)
+                                if "y" in dofs:
+                                    self.fixed_dofs.append(3 * node + 1)
+                                if "z" in dofs:
+                                    self.fixed_dofs.append(3 * node + 2)
 
-    def test_support_box_reports_when_no_node_is_captured(self):
-        domain = make_domain()
-        with self.assertRaisesRegex(ValueError, "did not capture"):
-            domain.add_support_box([1.0, 2.0], [1.0, 2.0], [1.0, 2.0])
+                                ex = min(ix, self.nx - 1)
+                                ey = min(iy, self.ny - 1)
+                                ez = min(iz, self.nz - 1)
+                                self.passive_mask[ex, ey, ez] = 1.0
 
-    def test_patch_load_reports_when_no_node_is_captured(self):
-        domain = make_domain()
-        with self.assertRaisesRegex(ValueError, "did not capture"):
-            domain.add_patch_load([1.0, 2.0], [1.0, 2.0], [1.0, 2.0], [0.0, 0.0, -1000.0])
+        self.fixed_dofs = list(set(self.fixed_dofs))
+        if captured_nodes == 0:
+            raise ValueError(
+                "Support box did not capture any mesh nodes. Increase its bounds "
+                "or refine the mesh so the restraint intersects a node."
+            )
 
+    def add_point_support(self, coord_xyz, dofs="xyz"):
+        """Restrain the nearest mesh node, independent of anisotropic mesh spacing."""
+        px, py, pz = (float(v) for v in coord_xyz)
+        if not (0.0 <= px <= self.Lx and 0.0 <= py <= self.Ly and 0.0 <= pz <= self.Lz):
+            raise ValueError("Point support coordinates must lie inside the domain.")
+        if not dofs or any(axis not in "xyz" for axis in dofs):
+            raise ValueError("Point support DOFs must contain one or more of x, y, z.")
 
-class ReferenceComplianceTests(unittest.TestCase):
-    """Small fixed-mesh compliance checks against a pure solid baseline.
+        ix = int(np.clip(round(px / self.dx), 0, self.nx))
+        iy = int(np.clip(round(py / self.dy), 0, self.ny))
+        iz = int(np.clip(round(pz / self.dz), 0, self.nz))
+        node = self._get_node_grid()[ix, iy, iz]
+        if "x" in dofs:
+            self.fixed_dofs.append(3 * node)
+        if "y" in dofs:
+            self.fixed_dofs.append(3 * node + 1)
+        if "z" in dofs:
+            self.fixed_dofs.append(3 * node + 2)
 
-    These are not published literature benchmarks (meshes are deliberately
-    coarse so the suite stays fast). They assert that:
-      - a fully solid domain under a known load produces a finite, positive
-        compliance of a stable order of magnitude;
-      - introducing a volume-constrained SIMP step reduces the mean density
-        toward the target while compliance remains finite and positive;
-      - self-weight, when enabled, increases the recovered compliance.
-    """
+        ex, ey, ez = min(ix, self.nx - 1), min(iy, self.ny - 1), min(iz, self.nz - 1)
+        self.passive_mask[ex, ey, ez] = 1.0
+        self.fixed_dofs = list(set(self.fixed_dofs))
 
-    def _cantilever_domain(self, nx=8, ny=2, nz=2):
-        """Short steel cantilever: fixed at x=0, tip load at x=Lx."""
-        Lx, Ly, Lz = 400.0, 100.0, 100.0
-        domain = Domain3D(
-            Lx=Lx, Ly=Ly, Lz=Lz,
-            nx=nx, ny=ny, nz=nz,
-            E=210000.0, nu=0.30, f_k=355.0, f_d=355.0,
-            material_type="steel", material_name="Steel S355",
-            gamma_kn_m3=78.5,
-        )
-        domain.add_support_box([0.0, 0.0], [0.0, Ly], [0.0, Lz], dofs="xyz")
-        # 1 kN downward at the free-end centre
-        domain.add_point_load([Lx, Ly / 2.0, Lz / 2.0], [0.0, 0.0, -1000.0])
-        return domain
+    def add_line_support(self, p1_xyz, p2_xyz, dofs="xyz"):
+        """
+        Restrains DOFs for every mesh node lying along the 3D line segment
+        from p1_xyz to p2_xyz.
 
-    def test_solid_cantilever_compliance_is_finite_and_positive(self):
-        domain = self._cantilever_domain()
-        opt = TopologyOptimiser3DCompliance(
-            domain, volfrac=1.0, penal_k=1.0, rmin_mm=80.0
-        )
-        # Force a fully solid density field
-        opt.x[:] = 1.0
-        U, _, _ = opt.assemble_and_solve_static(opt.x, include_self_weight=False)
-        self.assertTrue(np.all(np.isfinite(U)))
-        # Compliance C = U^T F  (self-weight off, so F is the applied load only)
-        C = float(U @ domain.F)
-        self.assertGreater(C, 0.0)
-        self.assertTrue(np.isfinite(C))
-        # Order-of-magnitude sanity for this coarse mesh & 1 kN tip load.
-        # Analytical Euler-Bernoulli tip deflection is ~0.03 mm → C ~ 0.015 N·mm;
-        # the coarse Hex8 mesh (only 2 elements through depth) is much softer
-        # because of shear locking / under-integration of bending, so C is
-        # larger. Bound is deliberately loose — the point is finiteness and
-        # a stable physical order of magnitude, not a literature benchmark.
-        self.assertLess(C, 50.0)
-        self.assertGreater(C, 1e-4)
+        FIX (see module docstring): rather than testing whether nodes fall
+        inside a small search box around sample points along the line (which
+        silently captures nothing if the box is smaller than the local mesh
+        spacing on any axis -- a real, confirmed failure mode for
+        anisotropic meshes), this samples t along the line and snaps each
+        sample to its NEAREST node index per axis via
+        round(coord / spacing), exactly mirroring add_point_load()'s proven
+        approach. That guarantees a node is always captured on every axis,
+        independent of dx/dy/dz being unequal.
 
-    def test_one_oc_step_reduces_mean_density_toward_volfrac(self):
-        domain = self._cantilever_domain()
-        volfrac = 0.4
-        opt = TopologyOptimiser3DCompliance(
-            domain, volfrac=volfrac, penal_k=3.0, rmin_mm=80.0
-        )
-        # Start from a uniform intermediate density
-        opt.x[:] = 0.7
-        U, _, _ = opt.assemble_and_solve_static(opt.x, include_self_weight=False)
-        dc = opt.compute_compliance_sensitivity(U, opt.x, include_self_weight=False)
-        dc_f = opt.filter_sensitivity(dc, opt.x)
-        x_new = opt.optimality_criteria_update(dc_f, move_limit=0.2)
-        mean_new = float(np.mean(x_new))
-        self.assertAlmostEqual(mean_new, volfrac, delta=0.05)
-        self.assertTrue(np.all(np.isfinite(x_new)))
-        # Compliance of the updated design must still be finite and positive
-        U2, _, _ = opt.assemble_and_solve_static(x_new, include_self_weight=False)
-        C2 = float(U2 @ domain.F)
-        self.assertGreater(C2, 0.0)
-        self.assertTrue(np.isfinite(C2))
+        Args:
+            p1_xyz, p2_xyz: [x, y, z] endpoints of the support line, in mm.
+            dofs: string containing any of 'x', 'y', 'z' -- which
+                translational DOFs to restrain at each captured node.
+        """
+        p1 = np.array(p1_xyz, dtype=float)
+        p2 = np.array(p2_xyz, dtype=float)
+        vec = p2 - p1
+        length = float(np.linalg.norm(vec))
 
-    def test_self_weight_increases_compliance(self):
-        domain = self._cantilever_domain()
-        opt = TopologyOptimiser3DCompliance(
-            domain, volfrac=1.0, penal_k=1.0, rmin_mm=80.0
-        )
-        opt.x[:] = 1.0
-        U_no, _, _ = opt.assemble_and_solve_static(opt.x, include_self_weight=False)
-        U_sw, _, _ = opt.assemble_and_solve_static(opt.x, include_self_weight=True)
-        # Recover compliance consistently: C = U^T F_total
-        F_sw = domain.F + opt.compute_self_weight_vector(opt.x)
-        C_no = float(U_no @ domain.F)
-        C_sw = float(U_sw @ F_sw)
-        self.assertGreater(C_sw, C_no)
-        self.assertTrue(np.isfinite(C_sw))
+        nodenrs = self._get_node_grid()
 
+        if length < 1e-6:
+            # Degenerate (zero-length) line -- treat as a single point.
+            candidates = [p1]
+        else:
+            # Sample finely enough that consecutive samples can never skip a
+            # node on whichever axis the line is changing fastest along.
+            # Using the mesh's FINEST spacing as the step is always safe
+            # (it can only ever over-sample, never under-sample, regardless
+            # of the line's direction) -- and because capture below is now
+            # index-based rather than box-based, redundant samples just
+            # resolve to the same node index and get deduplicated by the
+            # `seen_nodes` set. (This isn't necessarily faster than the old
+            # box-sampling for a single line in isolation -- the win here is
+            # correctness on anisotropic meshes, not raw speed.)
+            step = min(self.dx, self.dy, self.dz) * 0.5
+            n_samples = max(2, int(np.ceil(length / step)) + 1)
+            t_vals = np.linspace(0.0, 1.0, n_samples)
+            candidates = [p1 + t * vec for t in t_vals]
 
-if __name__ == "__main__":
-    unittest.main()
+        seen_nodes = set()
+        for pt in candidates:
+            ix = int(np.clip(round(pt[0] / self.dx), 0, self.nx))
+            iy = int(np.clip(round(pt[1] / self.dy), 0, self.ny))
+            iz = int(np.clip(round(pt[2] / self.dz), 0, self.nz))
+            seen_nodes.add((ix, iy, iz))
+
+        for ix, iy, iz in seen_nodes:
+            node = nodenrs[ix, iy, iz]
+            if "x" in dofs:
+                self.fixed_dofs.append(3 * node)
+            if "y" in dofs:
+                self.fixed_dofs.append(3 * node + 1)
+            if "z" in dofs:
+                self.fixed_dofs.append(3 * node + 2)
+
+            ex = min(ix, self.nx - 1)
+            ey = min(iy, self.ny - 1)
+            ez = min(iz, self.nz - 1)
+            self.passive_mask[ex, ey, ez] = 1.0
+
+        self.fixed_dofs = list(set(self.fixed_dofs))
+
+    def add_point_load(self, coord_xyz, force_xyz):
+        """Applies point force [Fx, Fy, Fz] in N and protects surrounding elements as solid."""
+        px, py, pz = coord_xyz
+        ix = int(np.clip(round(px / self.dx), 0, self.nx))
+        iy = int(np.clip(round(py / self.dy), 0, self.ny))
+        iz = int(np.clip(round(pz / self.dz), 0, self.nz))
+
+        nodenrs = self._get_node_grid()
+        node = nodenrs[ix, iy, iz]
+
+        self.F[3 * node] += force_xyz[0]
+        self.F[3 * node + 1] += force_xyz[1]
+        self.F[3 * node + 2] += force_xyz[2]
+
+        ex = min(ix, self.nx - 1)
+        ey = min(iy, self.ny - 1)
+        ez = min(iz, self.nz - 1)
+        self.passive_mask[ex, ey, ez] = 1.0
+
+    def add_patch_load(self, x_bounds, y_bounds, z_bounds, total_load_xyz):
+        """Distributes patch load uniformly across all nodes within bounding region.
+
+        Raises ValueError if the box captures no mesh nodes (mirrors
+        add_support_box behaviour so a mis-placed load cannot silently
+        vanish).
+        """
+        x_min, x_max = min(x_bounds), max(x_bounds)
+        y_min, y_max = min(y_bounds), max(y_bounds)
+        z_min, z_max = min(z_bounds), max(z_bounds)
+
+        nodenrs = self._get_node_grid()
+        eps = 1e-2
+
+        target_nodes = []
+        for ix in range(self.nx + 1):
+            px = ix * self.dx
+            if x_min - eps <= px <= x_max + eps:
+                for iy in range(self.ny + 1):
+                    py = iy * self.dy
+                    if y_min - eps <= py <= y_max + eps:
+                        for iz in range(self.nz + 1):
+                            pz = iz * self.dz
+                            if z_min - eps <= pz <= z_max + eps:
+                                target_nodes.append((ix, iy, iz, nodenrs[ix, iy, iz]))
+
+        if len(target_nodes) == 0:
+            raise ValueError(
+                "Patch load box did not capture any mesh nodes. Increase its "
+                "bounds or refine the mesh so the load intersects a node."
+            )
+
+        load_per_node = np.array(total_load_xyz, dtype=float) / len(target_nodes)
+        for ix, iy, iz, node in target_nodes:
+            self.F[3 * node] += load_per_node[0]
+            self.F[3 * node + 1] += load_per_node[1]
+            self.F[3 * node + 2] += load_per_node[2]
+
+            ex = min(ix, self.nx - 1)
+            ey = min(iy, self.ny - 1)
+            ez = min(iz, self.nz - 1)
+            self.passive_mask[ex, ey, ez] = 1.0
