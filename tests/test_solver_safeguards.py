@@ -72,6 +72,20 @@ class SolverSafeguardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "filter radius"):
             TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=0.0)
 
+    def test_point_support_snaps_to_nearest_node_on_anisotropic_mesh(self):
+        domain = Domain3D(
+            Lx=6000.0, Ly=300.0, Lz=600.0,
+            nx=36, ny=9, nz=12,
+        )
+        domain.add_point_support([100.0, 16.0, 24.0], dofs="xyz")
+        self.assertEqual(len(domain.fixed_dofs), 3)
+        self.assertEqual(int(np.count_nonzero(domain.passive_mask == 1.0)), 1)
+
+    def test_support_box_reports_when_no_node_is_captured(self):
+        domain = make_domain()
+        with self.assertRaisesRegex(ValueError, "did not capture"):
+            domain.add_support_box([1.0, 2.0], [1.0, 2.0], [1.0, 2.0])
+
 
 if __name__ == "__main__":
     unittest.main()
