@@ -267,8 +267,9 @@ opt.x = np.full((domain.nx, domain.ny, domain.nz), initial_free_density)
 opt.x[passive_solid] = 1.0
 opt.x[passive_void] = 0.001
 
-n_stages = max(1, int(round((PENAL_FINAL - PENAL_INIT) / PENAL_STEP)) + 1)
-continuation_interval = max(1, sim_iterations // n_stages)
+# Penalisation is advanced continuously through the requested stage increments.
+# This preserves the configured step size as the total continuation schedule,
+# but removes abrupt stiffness-model jumps at fixed iteration boundaries.
 
 # Density history for evolution scrubber (list of float32 arrays)
 density_history = [] if RECORD_HISTORY else None
@@ -282,8 +283,9 @@ if density_history is not None:
                 const t0 = performance.now();
 
                 await pyodide.runPythonAsync(`
-if i > 0 and i % continuation_interval == 0:
-    opt.penal_k = min(PENAL_FINAL, opt.penal_k + PENAL_STEP)
+opt.penal_k = opt.continuation_penalisation(
+    i, sim_iterations, PENAL_INIT, PENAL_FINAL, PENAL_STEP
+)
 
 U, K_global, free_dofs = opt.assemble_and_solve_static(opt.x, include_self_weight=include_self_weight)
 
@@ -295,7 +297,9 @@ dc_filtered = opt.filter_sensitivity(dc, opt.x)
 # The no-tension term is retained as an explicitly heuristic material
 # preference; it is not a consistent derivative of the compliance objective.
 if is_notension_material and NOTENSION_WEIGHT > 0.0:
-    dc_filtered = dc_filtered + opt.compute_notension_penalty(U)
+    dc_filtered = opt.combine_notension_sensitivity(
+        dc_filtered, opt.compute_notension_penalty(U), opt.x
+    )
 
 opt.x = opt.optimality_criteria_update(dc_filtered, move_limit=MOVE_LIMIT)
 
