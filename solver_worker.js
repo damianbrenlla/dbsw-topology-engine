@@ -254,9 +254,18 @@ opt = TopologyOptimiser3DCompliance(
     notension_weight=NOTENSION_WEIGHT,
 )
 
-opt.x = np.full((domain.nx, domain.ny, domain.nz), volfrac)
-opt.x[domain.passive_mask == 1.0] = 1.0
-opt.x[domain.passive_mask == 0.0] = 0.001
+passive_solid = domain.passive_mask == 1.0
+passive_void = domain.passive_mask == 0.0
+free_elements = ~(passive_solid | passive_void)
+target_volume = volfrac * domain.n_elems
+fixed_volume = float(np.count_nonzero(passive_solid)) + 0.001 * float(np.count_nonzero(passive_void))
+n_free = int(np.count_nonzero(free_elements))
+if fixed_volume + 0.001 * n_free > target_volume + 1e-8:
+    raise ValueError("Requested volume fraction is infeasible for the selected passive solid/void regions.")
+initial_free_density = 0.001 if n_free == 0 else min(1.0, max(0.001, (target_volume - fixed_volume) / n_free))
+opt.x = np.full((domain.nx, domain.ny, domain.nz), initial_free_density)
+opt.x[passive_solid] = 1.0
+opt.x[passive_void] = 0.001
 
 n_stages = max(1, int(round((PENAL_FINAL - PENAL_INIT) / PENAL_STEP)) + 1)
 continuation_interval = max(1, sim_iterations // n_stages)
