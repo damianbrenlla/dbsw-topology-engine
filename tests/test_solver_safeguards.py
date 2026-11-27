@@ -1,0 +1,67 @@
+"""Regression tests for R260004 topology optimisation safeguards.
+
+Run with: python -m unittest discover -s tests -v
+"""
+import unittest
+import numpy as np
+
+from core.domain import Domain3D
+from core.solvers import TopologyOptimiser3DCompliance
+
+
+def make_domain(nx=3, ny=2, nz=2):
+    return Domain3D(
+        Lx=600.0, Ly=200.0, Lz=200.0,
+        nx=nx, ny=ny, nz=nz,
+        E=30000.0, nu=0.2, f_k=30.0, f_d=20.0,
+        material_type="concrete", material_name="Test concrete",
+        gamma_kn_m3=25.0,
+    )
+
+
+class SolverSafeguardTests(unittest.TestCase):
+    def test_filter_reaches_neighbour_on_coarsest_axis(self):
+        domain = make_domain(nx=36, ny=9, nz=12)
+        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=150.0)
+        self.assertGreaterEqual(opt.rmin_mm, 1.5 * max(domain.dx, domain.dy, domain.dz))
+        kernel = opt.filter_kernel
+        cx, cy, cz = (n // 2 for n in kernel.shape)
+        self.assertGreater(kernel[cx + 1, cy, cz], 0.0)
+
+    def test_self_weight_sensitivity_contains_load_derivative(self):
+        domain = make_domain()
+        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=300.0)
+        x = np.full((domain.nx, domain.ny, domain.nz), 0.5)
+        U = np.linspace(-0.02, 0.03, domain.ndof)
+        with_sw = opt.compute_compliance_sensitivity(U, x, include_self_weight=True)
+        without_sw = opt.compute_compliance_sensitivity(U, x, include_self_weight=False)
+        self.assertTrue(np.all(np.isfinite(with_sw)))
+        self.assertGreater(float(np.linalg.norm(with_sw - without_sw)), 0.0)
+
+    def test_oc_preserves_passive_regions_and_volume(self):
+        domain = make_domain()
+        domain.passive_mask[0, 0, 0] = 1.0
+        domain.passive_mask[-1, -1, -1] = 0.0
+        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=300.0)
+        opt.x[:] = 0.5
+        dc = -np.ones_like(opt.x)
+        updated = opt.optimality_criteria_update(dc, move_limit=0.2)
+        self.assertEqual(updated[0, 0, 0], 1.0)
+        self.assertEqual(updated[-1, -1, -1], 0.001)
+        self.assertLessEqual(float(np.sum(updated)), opt.volfrac * updated.size + 1e-4)
+
+    def test_oc_rejects_infeasible_passive_solid_volume(self):
+        domain = make_domain()
+        domain.passive_mask[:] = 1.0
+        opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=300.0)
+        with self.assertRaisesRegex(ValueError, "forced-solid"):
+            opt.optimality_criteria_update(-np.ones_like(opt.x))
+
+    def test_filter_rejects_invalid_radius(self):
+        domain = make_domain()
+        with self.assertRaisesRegex(ValueError, "filter radius"):
+            TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=0.0)
+
+
+if __name__ == "__main__":
+    unittest.main()
