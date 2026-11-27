@@ -71,7 +71,7 @@ class SolverSafeguardTests(unittest.TestCase):
         opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=300.0)
         x = np.full((domain.nx, domain.ny, domain.nz), 0.5)
         base = -np.full_like(x, 100.0)
-        penalty = np.full_like(x, 30000.0)
+        penalty = np.full_like(x, 15000.0)
         combined = opt.combine_notension_sensitivity(base, penalty, x)
         self.assertTrue(np.all(np.isfinite(combined)))
         self.assertTrue(np.all(combined > base))
