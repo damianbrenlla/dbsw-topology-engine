@@ -96,6 +96,7 @@ class Domain3D:
 
         nodenrs = self._get_node_grid()
         eps = 1e-2
+        captured_nodes = 0
 
         for ix in range(self.nx + 1):
             px = ix * self.dx
@@ -107,6 +108,7 @@ class Domain3D:
                             pz = iz * self.dz
                             if z_min - eps <= pz <= z_max + eps:
                                 node = nodenrs[ix, iy, iz]
+                                captured_nodes += 1
                                 if "x" in dofs:
                                     self.fixed_dofs.append(3 * node)
                                 if "y" in dofs:
@@ -119,6 +121,34 @@ class Domain3D:
                                 ez = min(iz, self.nz - 1)
                                 self.passive_mask[ex, ey, ez] = 1.0
 
+        self.fixed_dofs = list(set(self.fixed_dofs))
+        if captured_nodes == 0:
+            raise ValueError(
+                "Support box did not capture any mesh nodes. Increase its bounds "
+                "or refine the mesh so the restraint intersects a node."
+            )
+
+    def add_point_support(self, coord_xyz, dofs="xyz"):
+        """Restrain the nearest mesh node, independent of anisotropic mesh spacing."""
+        px, py, pz = (float(v) for v in coord_xyz)
+        if not (0.0 <= px <= self.Lx and 0.0 <= py <= self.Ly and 0.0 <= pz <= self.Lz):
+            raise ValueError("Point support coordinates must lie inside the domain.")
+        if not dofs or any(axis not in "xyz" for axis in dofs):
+            raise ValueError("Point support DOFs must contain one or more of x, y, z.")
+
+        ix = int(np.clip(round(px / self.dx), 0, self.nx))
+        iy = int(np.clip(round(py / self.dy), 0, self.ny))
+        iz = int(np.clip(round(pz / self.dz), 0, self.nz))
+        node = self._get_node_grid()[ix, iy, iz]
+        if "x" in dofs:
+            self.fixed_dofs.append(3 * node)
+        if "y" in dofs:
+            self.fixed_dofs.append(3 * node + 1)
+        if "z" in dofs:
+            self.fixed_dofs.append(3 * node + 2)
+
+        ex, ey, ez = min(ix, self.nx - 1), min(iy, self.ny - 1), min(iz, self.nz - 1)
+        self.passive_mask[ex, ey, ez] = 1.0
         self.fixed_dofs = list(set(self.fixed_dofs))
 
     def add_line_support(self, p1_xyz, p2_xyz, dofs="xyz"):
