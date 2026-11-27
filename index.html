@@ -1458,8 +1458,10 @@ tensSlider.value = tensSlider.max;
 onStressSliderChange();
 status.style.color = "#000000";
 status.style.borderLeftColor = "#000000";
+var filterInfo = data.data.filter_radius_applied_mm != null
+? " | Filter " + Number(data.data.filter_radius_applied_mm).toFixed(1) + " mm" : "";
 status.innerText = "Optimisation complete in " + (data.data.solve_time_s || "?") + "s [" +
-(data.data.material_name || "") + "]. Rendering...";
+(data.data.material_name || "") + "]" + filterInfo + ". Rendering...";
 toggleRenderModeUI();
 reRenderMesh();
 } else if (data.status === 'frame_extracted') {
