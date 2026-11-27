@@ -112,7 +112,10 @@ self.onmessage = async function(e) {
         }
 
         try {
-            const iterations = parseInt(payload.iterations) || 15;
+            const iterations = Number.parseInt(payload.iterations, 10);
+            if (!Number.isInteger(iterations) || iterations < 1 || iterations > 500) {
+                throw new Error("Iterations must be an integer between 1 and 500.");
+            }
 
             // Advanced SIMP parameters (with safe defaults)
             const penalInit = Number.isFinite(parseFloat(payload.penal_init)) ? parseFloat(payload.penal_init) : DEFAULT_PENAL_INIT;
@@ -120,8 +123,14 @@ self.onmessage = async function(e) {
             const penalStep = Number.isFinite(parseFloat(payload.penal_step)) ? Math.max(0.1, parseFloat(payload.penal_step)) : DEFAULT_PENAL_STEP;
             const rminMm = Number.isFinite(parseFloat(payload.rmin_mm)) ? Math.max(1.0, parseFloat(payload.rmin_mm)) : DEFAULT_RMIN_MM;
             const moveLimit = Number.isFinite(parseFloat(payload.move_limit)) ? Math.max(0.01, Math.min(0.5, parseFloat(payload.move_limit))) : DEFAULT_MOVE_LIMIT;
-            const notensionWeight = Number.isFinite(parseFloat(payload.notension_weight)) ? parseFloat(payload.notension_weight) : DEFAULT_NOTENSION_WEIGHT;
+            const notensionWeight = Number.isFinite(parseFloat(payload.notension_weight)) ? Math.max(0, parseFloat(payload.notension_weight)) : DEFAULT_NOTENSION_WEIGHT;
             const recordHistory = payload.record_density_history !== false; // default on
+            if (!Number.isFinite(penalInit) || !Number.isFinite(penalFinal) || penalInit < 1 || penalFinal < penalInit || penalFinal > 5) {
+                throw new Error("Penalisation must satisfy 1 ≤ start ≤ final ≤ 5.");
+            }
+            if (!Number.isFinite(penalStep) || penalStep <= 0) {
+                throw new Error("Penalisation step must be a positive finite number.");
+            }
 
             postMessage({ status: "running", current_iter: 0, total_iter: iterations, phase: "Resolving material & domain" });
 
@@ -236,7 +245,9 @@ else:
 # --- Optimiser Setup ---
 volfrac = float(payload.get("volfrac", 0.20))
 sim_iterations = int(payload.get("iterations", 15))
-include_self_weight = bool(payload.get("include_self_weight", True))
+if not np.isfinite(volfrac) or not (0.0 < volfrac <= 1.0):
+    raise ValueError("Volume fraction must be greater than 0 and no greater than 1.")
+include_self_weight = payload.get("include_self_weight", True) is True
 is_notension_material = domain.material_type in ("concrete", "masonry", "stone")
 
 opt = TopologyOptimiser3DCompliance(
@@ -268,32 +279,17 @@ if i > 0 and i % continuation_interval == 0:
 
 U, K_global, free_dofs = opt.assemble_and_solve_static(opt.x, include_self_weight=include_self_weight)
 
-U_elem = U[opt.edof_vec]
-element_energy = np.sum((U_elem @ opt.KE) * U_elem, axis=1).reshape((domain.nx, domain.ny, domain.nz))
-dc = -opt.penal_k * (opt.x ** (opt.penal_k - 1.0)) * (opt.Emax - opt.Emin) * element_energy
-
+dc = opt.compute_compliance_sensitivity(
+    U, opt.x, include_self_weight=include_self_weight
+)
 dc_filtered = opt.filter_sensitivity(dc, opt.x)
 
-if is_notension_material:
+# The no-tension term is retained as an explicitly heuristic material
+# preference; it is not a consistent derivative of the compliance objective.
+if is_notension_material and NOTENSION_WEIGHT > 0.0:
     dc_filtered = dc_filtered + opt.compute_notension_penalty(U)
 
-l1, l2, move = 0.0, 1e12, float(MOVE_LIMIT)
-while (l2 - l1) / (l1 + l2 + 1e-10) > 1e-4:
-    lmid = 0.5 * (l1 + l2)
-    xnew = np.maximum(
-        0.001,
-        np.maximum(
-            opt.x - move,
-            np.minimum(1.0, np.minimum(opt.x + move, opt.x * np.sqrt(np.maximum(-dc_filtered, 1e-12) / lmid)))
-        )
-    )
-    xnew[domain.passive_mask == 1.0] = 1.0
-    xnew[domain.passive_mask == 0.0] = 0.001
-    if np.sum(xnew) - volfrac * opt.x.size > 0:
-        l1 = lmid
-    else:
-        l2 = lmid
-opt.x = xnew
+opt.x = opt.optimality_criteria_update(dc_filtered, move_limit=MOVE_LIMIT)
 
 if density_history is not None:
     density_history.append(np.round(opt.x.astype(np.float32), 3).copy())
