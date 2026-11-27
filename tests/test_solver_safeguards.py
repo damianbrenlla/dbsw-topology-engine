@@ -2,8 +2,12 @@
 
 Run with: python -m unittest discover -s tests -v
 """
+import os
+import sys
 import unittest
 import numpy as np
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python_core"))
 
 from core.domain import Domain3D
 from core.solvers import TopologyOptimiser3DCompliance
@@ -21,7 +25,13 @@ def make_domain(nx=3, ny=2, nz=2):
 
 class SolverSafeguardTests(unittest.TestCase):
     def test_filter_reaches_neighbour_on_coarsest_axis(self):
-        domain = make_domain(nx=36, ny=9, nz=12)
+        domain = Domain3D(
+            Lx=6000.0, Ly=300.0, Lz=600.0,
+            nx=36, ny=9, nz=12,
+            E=30000.0, nu=0.2, f_k=30.0, f_d=20.0,
+            material_type="concrete", material_name="Test concrete",
+            gamma_kn_m3=25.0,
+        )
         opt = TopologyOptimiser3DCompliance(domain, volfrac=0.5, rmin_mm=150.0)
         self.assertGreaterEqual(opt.rmin_mm, 1.5 * max(domain.dx, domain.dy, domain.dz))
         kernel = opt.filter_kernel
