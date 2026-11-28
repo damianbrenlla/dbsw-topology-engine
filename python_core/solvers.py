@@ -483,3 +483,98 @@ class TopologyOptimiser3DCompliance:
         U = np.zeros(ndof)
         U[free] = u_free
         return U, K, free
+
+    def compute_reactions(self, U, K, include_self_weight=False):
+        """Recover residual reaction forces at restrained DOFs and aggregate by support group.
+
+        Reaction residual R = K U - F  (positive R means the support pushes the
+        structure in that direction; the force the structure exerts on the support
+        is -R).  Values are returned in Newtons and millimetre coordinates.
+
+        Returns a dict with:
+          - global_applied_N: [Fx, Fy, Fz] total applied load (incl. self-weight)
+          - global_reaction_N: [Rx, Ry, Rz] total reaction (should balance applied)
+          - groups: list of per-support-group resultants and optional nodal detail
+        """
+        F = self.domain.F.copy()
+        if include_self_weight:
+            F = F + self.compute_self_weight_vector(self.x)
+
+        # Residual at every DOF; free DOFs are numerically ~0 after a good solve.
+        R = K.dot(U) - F
+
+        # Global sums (N)
+        global_applied = [
+            float(F[0::3].sum()),
+            float(F[1::3].sum()),
+            float(F[2::3].sum()),
+        ]
+        global_reaction = [
+            float(R[0::3].sum()),
+            float(R[1::3].sum()),
+            float(R[2::3].sum()),
+        ]
+
+        groups_out = []
+        for grp in getattr(self.domain, "support_groups", []) or []:
+            nodes = grp.get("nodes", [])
+            if not nodes:
+                continue
+            rx = ry = rz = 0.0
+            nodal = []
+            for node in nodes:
+                fx = float(R[3 * node])
+                fy = float(R[3 * node + 1])
+                fz = float(R[3 * node + 2])
+                rx += fx
+                ry += fy
+                rz += fz
+                # Node coordinates from index (regular grid)
+                # node = ix*(ny+1)*(nz+1) + iy*(nz+1) + iz  — recover via reshape
+                nodal.append({
+                    "node": int(node),
+                    "Fx": fx,
+                    "Fy": fy,
+                    "Fz": fz,
+                })
+
+            # Recover origin (already stored) and optional moment about origin.
+            # Node index layout: node = ix*(ny+1)*(nz+1) + iy*(nz+1) + iz
+            ox, oy, oz = grp["origin_xyz"]
+            mx = my = mz = 0.0
+            nyn1 = self.domain.ny + 1
+            nzn1 = self.domain.nz + 1
+            stride_x = nyn1 * nzn1
+            for entry in nodal:
+                n = entry["node"]
+                ix = n // stride_x
+                rem = n % stride_x
+                iy = rem // nzn1
+                iz = rem % nzn1
+                px = ix * self.domain.dx
+                py = iy * self.domain.dy
+                pz = iz * self.domain.dz
+                entry["x"] = float(px)
+                entry["y"] = float(py)
+                entry["z"] = float(pz)
+                dx, dy, dz = px - ox, py - oy, pz - oz
+                mx += dy * entry["Fz"] - dz * entry["Fy"]
+                my += dz * entry["Fx"] - dx * entry["Fz"]
+                mz += dx * entry["Fy"] - dy * entry["Fx"]
+
+            groups_out.append({
+                "id": grp["id"],
+                "type": grp["type"],
+                "dofs": grp["dofs"],
+                "origin_xyz": [float(ox), float(oy), float(oz)],
+                "resultant_N": [rx, ry, rz],
+                "moment_Nmm": [mx, my, mz],
+                "n_nodes": len(nodes),
+                "nodal": nodal,
+            })
+
+        return {
+            "global_applied_N": global_applied,
+            "global_reaction_N": global_reaction,
+            "groups": groups_out,
+        }
