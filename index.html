@@ -219,6 +219,31 @@ background: linear-gradient(to top, hsl(240, 85%, 45%), hsl(180, 85%, 45%), hsl(
 border: 1px solid #999999;
 }
 .legend-labels { display: flex; flex-direction: column; justify-content: space-between; height: 130px; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 0.70rem; color: #333333; }
+#reaction-tooltip {
+position: absolute;
+display: none;
+pointer-events: none;
+background: #ffffff;
+color: #000000;
+padding: 10px 12px;
+border-radius: 0;
+font-size: 0.72rem;
+line-height: 1.45;
+z-index: 1000;
+box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+border: 1px solid #000000;
+min-width: 150px;
+}
+#reaction-tooltip .tt-title {
+font-weight: 700;
+color: #000000;
+text-transform: uppercase;
+letter-spacing: 0.8px;
+font-size: 0.68rem;
+margin-bottom: 6px;
+border-bottom: 1px solid #e5e5e5;
+padding-bottom: 4px;
+}
 #intro-overlay {
 position: fixed; inset: 0; background: rgba(0,0,0,0.55);
 display: flex; align-items: center; justify-content: center;
@@ -562,15 +587,28 @@ Adjust limits between 0.01 MPa and calculated peaks. Elements outside range rend
 </div>
 </div>
 <hr>
-<div class="control-group" style="margin-top: 8px;">
+<div class="section-header">Reaction Vectors</div>
+<div class="control-group" style="margin-top: 4px;">
 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
 <input type="checkbox" id="show_reaction_vectors" checked onchange="updateReactionVisuals()">
 Show reaction vectors and values
 </label>
 <p style="font-size: 0.68rem; color: #888888; margin: 4px 0 0 0; line-height: 1.3;">
-Toggle green reaction arrows and their kN labels at each support.
+Toggle green reaction vectors and their kN labels at each support. Hover a vector for the Rx / Ry / Rz component breakdown.
 </p>
 </div>
+<div class="control-group">
+<label>Display Mode</label>
+<select id="reaction_display_mode" onchange="updateReactionVisuals()">
+<option value="resultants" selected>Resultants only (per support group)</option>
+<option value="nodal">Nodal arrows</option>
+<option value="both">Resultants + Nodal</option>
+</select>
+</div>
+<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.75rem;">
+<input type="checkbox" id="show_reaction_labels" checked onchange="updateReactionVisuals()">
+Show numerical labels (kN)
+</label>
 <hr>
 <div class="section-header">Interactive 3D Section Cut-Planes</div>
 <div class="control-group">
@@ -620,10 +658,13 @@ Toggle green reaction arrows and their kN labels at each support.
 </div>
 </div>
 </div>
+<div id="reaction-tooltip"></div>
 </div>
 
 <script>
 var scene, camera, renderer, controls, mesh;
+var reactionRaycaster = null;
+var reactionMouse = null;
 var domainBox, supportBoxVisual;
 var forceArrows = [];
 var supportGizmos = [];
@@ -914,6 +955,13 @@ container.appendChild(renderer.domElement);
 controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
+reactionRaycaster = new THREE.Raycaster();
+reactionMouse = new THREE.Vector2();
+container.addEventListener('mousemove', onReactionPointerMove);
+container.addEventListener('mouseleave', function() {
+var tip = document.getElementById('reaction-tooltip');
+if (tip) tip.style.display = 'none';
+});
 scene.add(new THREE.AmbientLight(0xffffff, 0.65));
 var keyLight = new THREE.DirectionalLight(0xffffff, 0.75);
 keyLight.position.set(5000, 8000, 4000);
@@ -1723,6 +1771,8 @@ reactionArrows.forEach(function(a) { scene.remove(a); });
 reactionArrows = [];
 reactionLabels.forEach(function(l) { scene.remove(l); });
 reactionLabels = [];
+var tip = document.getElementById('reaction-tooltip');
+if (tip) tip.style.display = 'none';
 }
 
 // Match form-finding engine: green (#00aa55) kN labels via canvas sprite
@@ -1748,42 +1798,119 @@ sprite.scale.set(1200, 150, 1);
 return sprite;
 }
 
+function _addReactionArrow(ox, oy, oz, fxN, fyN, fzN, isDistributed, reactionMeta) {
+// Forces in N; convert to kN for length scaling (form-finding convention)
+var Rx_kN = fxN / 1000.0;
+var Ry_kN = fyN / 1000.0;
+var Rz_kN = fzN / 1000.0;
+// Scene uses (x, z, y) mapping
+var origin = new THREE.Vector3(ox, oz, oy);
+var dir = new THREE.Vector3(Rx_kN, Rz_kN, Ry_kN);
+var mag = dir.length();
+if (mag < 1e-3) return null;
+dir.normalize();
+var arrowLen = isDistributed
+? Math.min(Math.max(mag * 30, 300), 1200)
+: Math.min(Math.max(mag * 50, 400), 1800);
+var arrow = new THREE.ArrowHelper(dir, origin, arrowLen, 0x00aa55, 140, 70);
+arrow.userData.reactionData = {
+type: (reactionMeta && reactionMeta.type) || 'Reaction',
+Rx: Rx_kN,
+Ry: Ry_kN,
+Rz: Rz_kN,
+Rtotal: mag
+};
+// Tag cone/line children so raycast can find reactionData via parent walk
+arrow.traverse(function(child) {
+child.userData.reactionData = arrow.userData.reactionData;
+});
+scene.add(arrow);
+reactionArrows.push(arrow);
+return { origin: origin, mag: mag, arrow: arrow };
+}
+
 function updateReactionVisuals() {
 clearReactionVisuals();
 var toggle = document.getElementById('show_reaction_vectors');
 if (!currentReactions || !toggle || !toggle.checked) return;
 
+var modeEl = document.getElementById('reaction_display_mode');
+var mode = modeEl ? modeEl.value : 'resultants';
+var labelsEl = document.getElementById('show_reaction_labels');
+var showLabels = !labelsEl || labelsEl.checked;
 var groups = currentReactions.groups || [];
+
 groups.forEach(function(g) {
-var r = g.resultant_N || [0, 0, 0]; // Newtons
+var r = g.resultant_N || [0, 0, 0];
 var o = g.origin_xyz || [0, 0, 0];
-// Convert to kN for magnitude / labelling (form-finding convention)
-var Rx_kN = r[0] / 1000.0;
-var Ry_kN = r[1] / 1000.0;
-var Rz_kN = r[2] / 1000.0;
-// Scene uses (x, z, y) mapping
-var origin = new THREE.Vector3(o[0], o[2], o[1]);
-var dir = new THREE.Vector3(Rx_kN, Rz_kN, Ry_kN);
-var mag = dir.length();
-if (mag < 1e-3) return;
-dir.normalize();
+var isDistributed = (g.type === 'line' || g.type === 'face');
+var typeLabel = 'Reaction';
 
-// Form-finding sizing: point ~ mag*50 [400,1800]; line/face ~ mag*30 [300,1200]
-var isLineOrFace = (g.type === 'line' || g.type === 'face');
-var arrowLen = isLineOrFace
-? Math.min(Math.max(mag * 30, 300), 1200)
-: Math.min(Math.max(mag * 50, 400), 1800);
-var arrow = new THREE.ArrowHelper(dir, origin, arrowLen, 0x00aa55, 140, 70);
-scene.add(arrow);
-reactionArrows.push(arrow);
-
-var labelText = (isLineOrFace ? (g.type === 'line' ? 'Line Reaction: ' : 'Face Reaction: ') : '')
-+ mag.toFixed(1) + ' kN';
-var sprite = makeReactionTextSprite(labelText, '#00aa55');
-sprite.position.copy(origin).add(new THREE.Vector3(0, 120, 0));
+if (mode === 'resultants' || mode === 'both') {
+var placed = _addReactionArrow(o[0], o[1], o[2], r[0], r[1], r[2], isDistributed, { type: typeLabel });
+if (placed && showLabels) {
+var sprite = makeReactionTextSprite(placed.mag.toFixed(1) + ' kN', '#00aa55');
+sprite.position.copy(placed.origin).add(new THREE.Vector3(0, 120, 0));
 scene.add(sprite);
 reactionLabels.push(sprite);
+}
+}
+
+if (mode === 'nodal' || mode === 'both') {
+(g.nodal || []).forEach(function(n) {
+var nm = Math.sqrt(n.Fx * n.Fx + n.Fy * n.Fy + n.Fz * n.Fz);
+if (nm < 1.0) return; // skip sub-N noise
+var placedN = _addReactionArrow(n.x, n.y, n.z, n.Fx, n.Fy, n.Fz, true, { type: 'Reaction' });
+if (placedN && showLabels && mode === 'nodal') {
+// Only label nodal arrows when mode is nodal-only (avoids clutter with both)
+var s2 = makeReactionTextSprite((nm / 1000.0).toFixed(1) + ' kN', '#00aa55');
+s2.position.copy(placedN.origin).add(new THREE.Vector3(0, 80, 0));
+s2.scale.multiplyScalar(0.75);
+scene.add(s2);
+reactionLabels.push(s2);
+}
 });
+}
+});
+}
+
+function onReactionPointerMove(event) {
+var tip = document.getElementById('reaction-tooltip');
+if (!tip || !renderer || !camera) return;
+if (!reactionArrows.length) {
+tip.style.display = 'none';
+return;
+}
+if (!reactionRaycaster) reactionRaycaster = new THREE.Raycaster();
+if (!reactionMouse) reactionMouse = new THREE.Vector2();
+
+var container = document.getElementById('viewport');
+var rect = container.getBoundingClientRect();
+reactionMouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
+reactionMouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
+
+reactionRaycaster.setFromCamera(reactionMouse, camera);
+var intersects = reactionRaycaster.intersectObjects(reactionArrows, true);
+
+if (intersects.length > 0) {
+var obj = intersects[0].object;
+while (obj && !obj.userData.reactionData && obj.parent) obj = obj.parent;
+if (obj && obj.userData.reactionData) {
+var d = obj.userData.reactionData;
+tip.style.display = 'block';
+tip.style.left = (event.clientX - rect.left + 15) + 'px';
+tip.style.top = (event.clientY - rect.top + 15) + 'px';
+tip.innerHTML =
+'<div class="tt-title">' + (d.type || 'Reaction') + '</div>' +
+'<div><b>R<sub>x</sub>:</b> ' + d.Rx.toFixed(2) + ' kN</div>' +
+'<div><b>R<sub>y</sub>:</b> ' + d.Ry.toFixed(2) + ' kN</div>' +
+'<div><b>R<sub>z</sub>:</b> ' + d.Rz.toFixed(2) + ' kN</div>' +
+'<div style="border-top: 1px solid #e5e5e5; margin-top: 4px; padding-top: 3px;">' +
+'<b>R<sub>total</sub>:</b> ' + d.Rtotal.toFixed(2) + ' kN</div>';
+return;
+}
+}
+tip.style.display = 'none';
 }
 
 function format2DP(val) {
