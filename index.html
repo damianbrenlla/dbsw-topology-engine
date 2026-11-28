@@ -562,6 +562,35 @@ Adjust limits between 0.01 MPa and calculated peaks. Elements outside range rend
 </div>
 </div>
 <hr>
+<div class="section-header">Reaction Vectors</div>
+<div class="control-group">
+<label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+<input type="checkbox" id="show_reactions" onchange="updateReactionVisuals()">
+Show Reaction Vectors
+</label>
+</div>
+<div class="control-group">
+<label>Display Mode</label>
+<select id="reaction_display_mode" onchange="updateReactionVisuals()">
+<option value="resultants" selected>Resultants only (per support group)</option>
+<option value="nodal">Nodal arrows</option>
+<option value="both">Resultants + Nodal</option>
+</select>
+</div>
+<div class="control-group">
+<label>Arrow Scale</label>
+<input type="range" id="reaction_scale" min="0.1" max="5" step="0.1" value="1" oninput="updateReactionVisuals()">
+</div>
+<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.75rem;">
+<input type="checkbox" id="show_reaction_labels" checked onchange="updateReactionVisuals()">
+Show numerical labels (kN)
+</label>
+<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.75rem;">
+<input type="checkbox" id="show_global_equilibrium" checked onchange="updateReactionVisuals()">
+Show global equilibrium check
+</label>
+<div id="reaction-summary" style="display:none;font-size:0.70rem;background:#f9f9f9;border:1px solid #e5e5e5;padding:8px;margin-top:4px;line-height:1.45;white-space:pre-line;"></div>
+<hr>
 <div class="section-header">Interactive 3D Section Cut-Planes</div>
 <div class="control-group">
 <label>Cut Plane X Position (Longitudinal Cut)</label>
@@ -618,6 +647,9 @@ var domainBox, supportBoxVisual;
 var forceArrows = [];
 var supportGizmos = [];
 var voidRegionGizmos = [];
+var reactionArrows = [];
+var reactionLabels = [];
+var currentReactions = null;
 var currentVertices = [], currentFaces = [], currentStressesMPa = [], currentDeflectionsMM = [];
 var currentSigmaMaxTens = 1.0;
 var currentSigmaMaxComp = -1.0;
@@ -1430,6 +1462,7 @@ currentSigmaMaxTens = data.data.sigma_max_tens != null ? data.data.sigma_max_ten
 currentSigmaMaxComp = data.data.sigma_max_comp != null ? data.data.sigma_max_comp : Math.min(0.0, ...currentStressesMPa);
 currentUMax = data.data.u_max;
 currentFk = data.data.f_k || 30.0;
+currentReactions = data.data.reactions || null;
 
 // Store final frame for evolution restore
 evoFinalFrame = {
@@ -1464,6 +1497,7 @@ status.innerText = "Optimisation complete in " + (data.data.solve_time_s || "?")
 (data.data.material_name || "") + "]" + filterInfo + ". Rendering...";
 toggleRenderModeUI();
 reRenderMesh();
+updateReactionVisuals();
 } else if (data.status === 'frame_extracted') {
 var fr = data.data;
 evoFrameCache[fr.frame_index] = { vertices: fr.vertices, faces: fr.faces };
@@ -1680,6 +1714,8 @@ currentVertices = [];
 currentFaces = [];
 currentStressesMPa = [];
 currentDeflectionsMM = [];
+currentReactions = null;
+clearReactionVisuals();
 if (mesh) {
 scene.remove(mesh);
 mesh.geometry.dispose();
@@ -1690,6 +1726,8 @@ document.getElementById('legend').style.display = 'none';
 document.getElementById('results-actions-group').style.display = 'none';
 document.getElementById('stress_thresholds_div').style.display = 'none';
 document.getElementById('density-evolution-panel').style.display = 'none';
+var summary = document.getElementById('reaction-summary');
+if (summary) { summary.style.display = 'none'; summary.textContent = ''; }
 stopEvolutionPlayback();
 densityHistoryFrames = 0;
 evoFrameCache = {};
@@ -1699,6 +1737,115 @@ status.style.color = "#000000";
 status.style.borderLeftColor = "#000000";
 status.innerText = "Results cleared. Ready to define parameters.";
 updateDomainVisuals();
+}
+
+function clearReactionVisuals() {
+reactionArrows.forEach(function(a) {
+scene.remove(a);
+if (a.geometry) a.geometry.dispose();
+if (a.material) a.material.dispose();
+});
+reactionArrows = [];
+reactionLabels.forEach(function(l) { scene.remove(l); });
+reactionLabels = [];
+}
+
+function _makeReactionArrow(ox, oy, oz, fx, fy, fz, scale, color) {
+// Scene uses (x, z, y) mapping to match existing mesh convention.
+var origin = new THREE.Vector3(ox, oz, oy);
+var dir = new THREE.Vector3(fx, fz, fy);
+var mag = dir.length();
+if (mag < 1e-9) return null;
+dir.normalize();
+// Scale: arrow length proportional to force magnitude (N) * user scale.
+// Reference: 1000 N -> ~200 mm base length at scale=1.
+var length = Math.min(Math.max(mag * 0.2 * scale, 40), 1200);
+var arrow = new THREE.ArrowHelper(dir, origin, length, color, length * 0.22, length * 0.12);
+return arrow;
+}
+
+function _makeReactionLabel(ox, oy, oz, text) {
+var canvas = document.createElement('canvas');
+canvas.width = 256;
+canvas.height = 64;
+var ctx = canvas.getContext('2d');
+ctx.fillStyle = 'rgba(255,255,255,0.88)';
+ctx.fillRect(0, 0, 256, 64);
+ctx.strokeStyle = '#000';
+ctx.lineWidth = 2;
+ctx.strokeRect(1, 1, 254, 62);
+ctx.fillStyle = '#000';
+ctx.font = 'bold 22px Helvetica, Arial, sans-serif';
+ctx.textAlign = 'center';
+ctx.textBaseline = 'middle';
+ctx.fillText(text, 128, 32);
+var tex = new THREE.CanvasTexture(canvas);
+var mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+var sprite = new THREE.Sprite(mat);
+sprite.position.set(ox, oz + 30, oy);
+sprite.scale.set(280, 70, 1);
+return sprite;
+}
+
+function updateReactionVisuals() {
+clearReactionVisuals();
+var summaryEl = document.getElementById('reaction-summary');
+if (!currentReactions || !document.getElementById('show_reactions').checked) {
+if (summaryEl) summaryEl.style.display = 'none';
+return;
+}
+var mode = document.getElementById('reaction_display_mode').value;
+var scale = parseFloat(document.getElementById('reaction_scale').value) || 1;
+var showLabels = document.getElementById('show_reaction_labels').checked;
+var showGlobal = document.getElementById('show_global_equilibrium').checked;
+var groups = currentReactions.groups || [];
+var lines = [];
+
+if (showGlobal) {
+var ga = currentReactions.global_applied_N || [0, 0, 0];
+var gr = currentReactions.global_reaction_N || [0, 0, 0];
+var toKN = function(v) { return (v / 1000).toFixed(2); };
+lines.push('Global applied  [kN]: Fx=' + toKN(ga[0]) + '  Fy=' + toKN(ga[1]) + '  Fz=' + toKN(ga[2]));
+lines.push('Global reaction [kN]: Rx=' + toKN(gr[0]) + '  Ry=' + toKN(gr[1]) + '  Rz=' + toKN(gr[2]));
+var imb = Math.sqrt(
+Math.pow(ga[0] + gr[0], 2) + Math.pow(ga[1] + gr[1], 2) + Math.pow(ga[2] + gr[2], 2)
+);
+lines.push('Imbalance |R+F| = ' + toKN(imb) + ' kN  (should be ~0)');
+lines.push('');
+}
+
+groups.forEach(function(g) {
+var r = g.resultant_N || [0, 0, 0];
+var o = g.origin_xyz || [0, 0, 0];
+var mag = Math.sqrt(r[0]*r[0] + r[1]*r[1] + r[2]*r[2]);
+var toKN = function(v) { return (v / 1000).toFixed(2); };
+lines.push('#' + g.id + ' ' + g.type + '  (' + (g.n_nodes || 0) + ' nodes)  R=[' +
+toKN(r[0]) + ', ' + toKN(r[1]) + ', ' + toKN(r[2]) + '] kN');
+
+if (mode === 'resultants' || mode === 'both') {
+// Reaction force the *support exerts on the structure* is +R residual;
+// arrow points in residual direction (support push).
+var arrow = _makeReactionArrow(o[0], o[1], o[2], r[0], r[1], r[2], scale, 0xcc2200);
+if (arrow) { scene.add(arrow); reactionArrows.push(arrow); }
+if (showLabels && mag > 1e-3) {
+var lbl = _makeReactionLabel(o[0], o[1], o[2], 'R ' + toKN(mag) + ' kN');
+scene.add(lbl); reactionLabels.push(lbl);
+}
+}
+if (mode === 'nodal' || mode === 'both') {
+(g.nodal || []).forEach(function(n) {
+var nm = Math.sqrt(n.Fx*n.Fx + n.Fy*n.Fy + n.Fz*n.Fz);
+if (nm < 1e-6) return;
+var a2 = _makeReactionArrow(n.x, n.y, n.z, n.Fx, n.Fy, n.Fz, scale * 0.55, 0x2255cc);
+if (a2) { scene.add(a2); reactionArrows.push(a2); }
+});
+}
+});
+
+if (summaryEl) {
+summaryEl.style.display = lines.length ? 'block' : 'none';
+summaryEl.textContent = lines.join('\n');
+}
 }
 
 function format2DP(val) {
