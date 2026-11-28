@@ -380,6 +380,9 @@ if len(vertex_deflections_mm) > 0:
 else:
     u_max = float(np.max(disp_mags))
 
+# Reaction recovery (residual forces at restrained DOFs, grouped by support)
+reactions = opt.compute_reactions(U_final, K_final, include_self_weight=include_self_weight)
+
 elapsed_time = time.time() - t0
 
 n_history = len(density_history) if density_history is not None else 0
@@ -403,6 +406,7 @@ json.dumps({
     "filter_radius_requested_mm": opt.requested_rmin_mm,
     "filter_radius_applied_mm": opt.rmin_mm,
     "density_history_frames": n_history,
+    "reactions": reactions,
 })
             `);
 
