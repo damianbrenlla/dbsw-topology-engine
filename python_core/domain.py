@@ -81,6 +81,11 @@ class Domain3D:
         self.F = np.zeros(self.ndof)
         self.fixed_dofs = []
 
+        # Support groups for reaction recovery (point / line / face-box).
+        # Each entry: {id, type, dofs, nodes: [node_indices], origin_xyz: [x,y,z]}
+        self.support_groups = []
+        self._support_group_counter = 0
+
         # Passive region mask: 1.0 = forced solid, 0.0 = forced void, -1.0 = free design space
         self.passive_mask = np.full((self.nx, self.ny, self.nz), -1.0)
 
@@ -89,14 +94,18 @@ class Domain3D:
         return np.arange(self.n_nodes).reshape((self.nx + 1, self.ny + 1, self.nz + 1))
 
     def add_support_box(self, x_bounds, y_bounds, z_bounds, dofs="xyz"):
-        """Restrains DOFs and protects surrounding elements as solid passive mask."""
+        """Restrains DOFs and protects surrounding elements as solid passive mask.
+
+        Also registers a face/box support group for reaction aggregation.
+        """
         x_min, x_max = min(x_bounds), max(x_bounds)
         y_min, y_max = min(y_bounds), max(y_bounds)
         z_min, z_max = min(z_bounds), max(z_bounds)
 
         nodenrs = self._get_node_grid()
         eps = 1e-2
-        captured_nodes = 0
+        captured_nodes = []
+        node_xyz = []
 
         for ix in range(self.nx + 1):
             px = ix * self.dx
@@ -107,8 +116,9 @@ class Domain3D:
                         for iz in range(self.nz + 1):
                             pz = iz * self.dz
                             if z_min - eps <= pz <= z_max + eps:
-                                node = nodenrs[ix, iy, iz]
-                                captured_nodes += 1
+                                node = int(nodenrs[ix, iy, iz])
+                                captured_nodes.append(node)
+                                node_xyz.append([px, py, pz])
                                 if "x" in dofs:
                                     self.fixed_dofs.append(3 * node)
                                 if "y" in dofs:
@@ -122,11 +132,18 @@ class Domain3D:
                                 self.passive_mask[ex, ey, ez] = 1.0
 
         self.fixed_dofs = list(set(self.fixed_dofs))
-        if captured_nodes == 0:
+        if len(captured_nodes) == 0:
             raise ValueError(
                 "Support box did not capture any mesh nodes. Increase its bounds "
                 "or refine the mesh so the restraint intersects a node."
             )
+
+        origin = [
+            float(np.mean([p[0] for p in node_xyz])),
+            float(np.mean([p[1] for p in node_xyz])),
+            float(np.mean([p[2] for p in node_xyz])),
+        ]
+        self._register_support_group("face", dofs, captured_nodes, origin)
 
     def add_point_support(self, coord_xyz, dofs="xyz"):
         """Restrain the nearest mesh node, independent of anisotropic mesh spacing."""
@@ -139,7 +156,7 @@ class Domain3D:
         ix = int(np.clip(round(px / self.dx), 0, self.nx))
         iy = int(np.clip(round(py / self.dy), 0, self.ny))
         iz = int(np.clip(round(pz / self.dz), 0, self.nz))
-        node = self._get_node_grid()[ix, iy, iz]
+        node = int(self._get_node_grid()[ix, iy, iz])
         if "x" in dofs:
             self.fixed_dofs.append(3 * node)
         if "y" in dofs:
@@ -150,6 +167,10 @@ class Domain3D:
         ex, ey, ez = min(ix, self.nx - 1), min(iy, self.ny - 1), min(iz, self.nz - 1)
         self.passive_mask[ex, ey, ez] = 1.0
         self.fixed_dofs = list(set(self.fixed_dofs))
+
+        # Actual restrained node location (snapped)
+        origin = [ix * self.dx, iy * self.dy, iz * self.dz]
+        self._register_support_group("point", dofs, [node], origin)
 
     def add_line_support(self, p1_xyz, p2_xyz, dofs="xyz"):
         """
@@ -204,8 +225,12 @@ class Domain3D:
             iz = int(np.clip(round(pt[2] / self.dz), 0, self.nz))
             seen_nodes.add((ix, iy, iz))
 
+        captured_nodes = []
+        node_xyz = []
         for ix, iy, iz in seen_nodes:
-            node = nodenrs[ix, iy, iz]
+            node = int(nodenrs[ix, iy, iz])
+            captured_nodes.append(node)
+            node_xyz.append([ix * self.dx, iy * self.dy, iz * self.dz])
             if "x" in dofs:
                 self.fixed_dofs.append(3 * node)
             if "y" in dofs:
@@ -219,6 +244,25 @@ class Domain3D:
             self.passive_mask[ex, ey, ez] = 1.0
 
         self.fixed_dofs = list(set(self.fixed_dofs))
+
+        if captured_nodes:
+            origin = [
+                float(np.mean([p[0] for p in node_xyz])),
+                float(np.mean([p[1] for p in node_xyz])),
+                float(np.mean([p[2] for p in node_xyz])),
+            ]
+            self._register_support_group("line", dofs, captured_nodes, origin)
+
+    def _register_support_group(self, stype, dofs, nodes, origin_xyz):
+        """Record a support group for later reaction aggregation."""
+        self._support_group_counter += 1
+        self.support_groups.append({
+            "id": self._support_group_counter,
+            "type": stype,  # "point" | "line" | "face"
+            "dofs": "".join(sorted(set(dofs))),
+            "nodes": sorted(set(int(n) for n in nodes)),
+            "origin_xyz": [float(v) for v in origin_xyz],
+        })
 
     def add_point_load(self, coord_xyz, force_xyz):
         """Applies point force [Fx, Fy, Fz] in N and protects surrounding elements as solid."""
